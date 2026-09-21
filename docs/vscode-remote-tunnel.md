@@ -4,13 +4,40 @@ VS Code Remote Tunnel を利用して、別ホストのブラウザから Mac �
 
 ```mermaid
 flowchart LR
-    A[ブラウザ / vscode.dev] --> B[VS Code Remote Tunnel]
-    B --> C[VS Code Server<br/>Langfuse Host]
-    C -->|OTLP/HTTP| D[Langfuse]
+  subgraph MBA[開発作業用 MacBook Air]
+    A[ブラウザ / vscode.dev]
+  end
+  subgraph MINI[開発用 Mac mini]
+    C[VS Code Server]
+  end
+  subgraph LF[Langfuse サーバー]
+    subgraph DOCKER[Docker]
+      D[Langfuse]
+    end
+  end
+  A -->|VS Code Remote Tunnel| C
+  C -->|OTLP/HTTP| D
 ```
 
 OpenTelemetry の送信元はブラウザではなく、Remote Tunnel 接続先で動作する VS Code Server です。
 そのため、Langfuse のエンドポイントへ接続できるようにする設定は、接続先ホスト側で行います。
+
+私の検証環境は VS Code Server と Langfuse サーバーが同じ Mac mini に同居しているので、実態は以下のような構成になっています。
+
+```mermaid
+flowchart LR
+  subgraph MBA[開発作業用 MacBook Air]
+    A[ブラウザ / vscode.dev]
+  end
+  subgraph MINI[開発用 Mac mini]
+    C[VS Code Server]
+    subgraph DOCKER[Docker]
+      D[Langfuse]
+    end
+    C -->|OTLP/HTTP| D
+  end
+  A -->|VS Code Remote Tunnel| C
+```
 
 ## 1. 前提
 
@@ -26,9 +53,9 @@ Remote Tunnel 自体は、次のコマンドでサービスとしてインスト
 code tunnel service install --name macmini
 ```
 
-VS Code Remote Tunnel の詳細は、[VS Code公式ドキュメント](https://code.visualstudio.com/docs/remote/tunnels)を参照してください。
+VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://code.visualstudio.com/docs/remote/tunnels) を参照してください。
 
-## 2. トンネルサービスへOpenTelemetry環境変数を設定
+## 2. トンネルサービスへ OpenTelemetry 環境変数を設定
 
 `code tunnel service` は macOS の `launchd` で起動します。`launchd` は、サービスをインストールしたターミナルの環境変数や `~/.zshrc` を読み込みません。
 
@@ -41,7 +68,7 @@ VS Code Remote Tunnel の詳細は、[VS Code公式ドキュメント](https://c
 - `COPILOT_OTEL_ENABLED`
 - `COPILOT_OTEL_CAPTURE_CONTENT`
 
-サービスが使用するplistへ環境変数を設定します。以下は、既存の共通認証環境ファイルから値を読み込み、VS Code Tunnelのサービスplistへ反映する例です。
+サービスが使用する plist へ環境変数を設定します。以下は、既存の共通認証環境ファイルから値を読み込み、VS Code Tunnel のサービス plist へ反映する例です。
 
 ```bash
 set -eu
@@ -92,20 +119,26 @@ launchctl load "$PLIST"
 launchctl start "$LABEL"
 ```
 
-VS Codeの配布形態によってサービスラベルが異なる場合は、次で確認できます。
+VS Code の配布形態によってサービスラベルが異なる場合は、次で確認できます。
 
 ```bash
 launchctl list | grep 'com.visualstudio.*tunnel'
 ```
 
-`code tunnel service install` を再実行するとplistが再生成される場合があります。その場合は、上記の環境変数設定も再実行してください。
+`code tunnel service install` を再実行すると plist が再生成される場合があります。その場合は、上記の環境変数設定も再実行してください。
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
+
+> [!WARINIG]
+> `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
 
 > [!CAUTION]
-> plistにはLangfuseのBasic認証情報が保存されます。plistの内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
+> plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
 
-## 3. VS Code Chat側の設定
+## 3. VS Code Chat 側の設定
 
-Remote Tunnelへ接続した状態で、コマンドパレットから **Preferences: Open User Settings (JSON)** を開き、次を追加します。
+Remote Tunnel へ接続した状態で、コマンドパレットから **Preferences: Open User Settings (JSON)** を開き、次を追加します。
 
 ```json
 {
@@ -116,35 +149,41 @@ Remote Tunnelへ接続した状態で、コマンドパレットから **Prefere
 }
 ```
 
-`192.168.1.20:16300` は、LangfuseホストのIPアドレスと公開ポートへ置き換えてください。
+`192.168.1.20:16300` は、Langfuse ホストの IP アドレスと公開ポートへ置き換えてください。
 
-これらはVS Code Chatの設定であり、`.zshrc`や統合ターミナルの環境変数だけでは設定できません。Workspace Settingsではなく、User Settings JSONへ追加してください。
+これらは VS Code Chat の設定であり、`.zshrc` や統合ターミナルの環境変数だけでは設定できません。Workspace Settings ではなく、User Settings JSON へ追加してください。
+
+> [!TIP]
+> `github.copilot.chat.otel.captureContent` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
+
+> [!WARINIG]
+> `github.copilot.chat.otel.captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
 
 ## 4. 接続先と認証の確認
 
-Remote Tunnelの接続先ホスト上で、Langfuseのエンドポイントへ到達できることを確認します。
+Remote Tunnel の接続先ホスト上で、Langfuse のエンドポイントへ到達できることを確認します。
 
 ```bash
 curl -i "http://192.168.1.20:16300"
 ```
 
-Langfuse Webの応答が返れば、ネットワーク経路は確認できています。
+Langfuse Web の応答が返れば、ネットワーク経路は確認できています。
 
-その後、VS Code ChatでCopilotへログインし、テストメッセージを送信します。認証状態が不安定な場合は、VS CodeのアカウントメニューからGitHubアカウントを一度サインアウトしてから、再度サインインしてください。
+その後、VS Code Chat で Copilot へログインし、テストメッセージを送信します。認証状態が不安定な場合は、VS Code のアカウントメニューから GitHub アカウントを一度サインアウトしてから、再度サインインしてください。
 
 ## 5. 動作確認
 
 次を確認します。
 
-1. VS Code Chatでメッセージに応答が返る
-2. Langfuse Web UIにTraceが作成される
-3. Traceのmetadataに次が含まれる
+1. VS Code Chat でメッセージに応答が返る
+2. Langfuse Web UI に Trace が作成される
+3. Trace の metadata に次が含まれる
 
 ```text
 langfuse.trace.metadata.execution_origin=vscode-chat
 ```
 
-VS Codeのログに、次のようなOpenTelemetry設定が出力されることも確認できます。
+VS Code のログに、次のような OpenTelemetry 設定が出力されることも確認できます。
 
 ```text
 [OTel] Instrumentation enabled
@@ -153,19 +192,19 @@ endpoint=http://192.168.1.20:16300/api/public/otel
 captureContent=false
 ```
 
-## 6. CLI/TUIとの違い
+## 6. CLI/TUI との違い
 
-| 利用経路 | 実行場所 | 設定方法 | `execution_origin` |
-| --- | --- | --- | --- |
-| Copilot CLI/TUI | 統合ターミナル | `~/.zshrc` の `copilot()` ラッパー | `manual-tui` |
-| VS Code Chat | Remote Tunnel接続先のVS Code Server | User Settings JSON + launchd plist | `vscode-chat` |
+| 利用経路        | 実行場所                              | 設定方法                           | `execution_origin` |
+| --------------- | ------------------------------------- | ---------------------------------- | ------------------ |
+| Copilot CLI/TUI | 統合ターミナル                        | `~/.zshrc` の `copilot()` ラッパー | `manual-tui`       |
+| VS Code Chat    | Remote Tunnel 接続先の VS Code Server | User Settings JSON + launchd plist | `vscode-chat`      |
 
-Remote Tunnel経由のVS Code Chatでは、ブラウザ側のシェル設定や、ブラウザを開いたホストの `~/.zshrc` は接続先のVS Code Serverへ伝搬しません。
+Remote Tunnel 経由の VS Code Chat では、ブラウザ側のシェル設定や、ブラウザを開いたホストの `~/.zshrc` は接続先の VS Code Server へ伝搬しません。
 
-また、VS Code ChatのGitHub認証と、ターミナルで実行するCopilot CLIの認証は別経路です。片方のサインイン状態だけで、もう片方が自動的に有効になるとは限りません。
+また、VS Code Chat の GitHub 認証と、ターミナルで実行する Copilot CLI の認証は別経路です。片方のサインイン状態だけで、もう片方が自動的に有効になるとは限りません。
 
 ## 7. セキュリティ上の注意
 
-この構成では、VS Code ServerからLangfuseへHTTPで送信します。LAN外から利用する場合は、HTTPS、VPN、またはTLS終端するリバースプロキシを使用してください。
+この構成では、VS Code Server から Langfuse へ HTTP で送信します。LAN 外から利用する場合は、HTTPS、VPN、または TLS 終端するリバースプロキシを使用してください。
 
 `captureContent` および `COPILOT_OTEL_CAPTURE_CONTENT` は `false` に設定し、プロンプト、応答、ツール引数などの本文を送信しない構成を推奨します。

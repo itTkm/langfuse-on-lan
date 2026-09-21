@@ -67,6 +67,7 @@ VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://
 - `OTEL_EXPORTER_OTLP_PROTOCOL`
 - `OTEL_EXPORTER_OTLP_HEADERS`
 - `OTEL_RESOURCE_ATTRIBUTES`
+- `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`
 - `COPILOT_OTEL_ENABLED`
 - `COPILOT_OTEL_CAPTURE_CONTENT`
 
@@ -76,8 +77,9 @@ VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://
 set -eu
 
 ENV_FILE="$HOME/.config/langfuse/copilot-otel.env"
-PLIST="$HOME/com.visualstudio.code.tunnel.plist"
-LABEL="com.visualstudio.code.tunnel"
+
+# 先に `find` で実際のplistのパスを確認し、その値に置き換えます。
+PLIST="/path/to/your/tunnel.plist"
 
 if [[ ! -r "$ENV_FILE" ]]; then
   echo "環境ファイルが見つかりません: $ENV_FILE" >&2
@@ -86,13 +88,16 @@ fi
 
 if [[ ! -r "$PLIST" ]]; then
   echo "Tunnelサービスのplistが見つかりません: $PLIST" >&2
-  echo "先に code tunnel service install --name macmini を実行してください。" >&2
+  echo "先に次のコマンドでplistのパスを確認してください。" >&2
+  echo 'find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print' >&2
   exit 1
 fi
 
 source "$ENV_FILE"
 
 OTEL_RESOURCE_ATTRIBUTES_VALUE="langfuse.trace.metadata.execution_origin=vscode-chat"
+: "${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:=false}"
+LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$PLIST")"
 
 launchctl unload "$PLIST" 2>/dev/null || true
 
@@ -111,6 +116,7 @@ set_plist_env OTEL_EXPORTER_OTLP_ENDPOINT "$OTEL_EXPORTER_OTLP_ENDPOINT"
 set_plist_env OTEL_EXPORTER_OTLP_PROTOCOL "$OTEL_EXPORTER_OTLP_PROTOCOL"
 set_plist_env OTEL_EXPORTER_OTLP_HEADERS "$OTEL_EXPORTER_OTLP_HEADERS"
 set_plist_env OTEL_RESOURCE_ATTRIBUTES "$OTEL_RESOURCE_ATTRIBUTES_VALUE"
+set_plist_env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT "$OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 set_plist_env COPILOT_OTEL_ENABLED "true"
 set_plist_env COPILOT_OTEL_CAPTURE_CONTENT "false"
 
@@ -121,10 +127,16 @@ launchctl load "$PLIST"
 launchctl start "$LABEL"
 ```
 
-VS Code の配布形態によってサービスラベルが異なる場合は、次で確認できます。
+VS Code の配布形態によって plist の場所やサービスラベルが異なります。plist の場所は次で確認できます。
 
 ```bash
-launchctl list | grep 'com.visualstudio.*tunnel'
+find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print
+```
+
+サービスラベルはplistから確認できます。
+
+```bash
+/usr/libexec/PlistBuddy -c 'Print :Label' "/path/to/your/tunnel.plist"
 ```
 
 `code tunnel service install` を再実行すると plist が再生成される場合があります。その場合は、上記の環境変数設定も再実行してください。

@@ -1,5 +1,7 @@
 # VS Code Remote Tunnel 経由の設定
 
+[English](vscode-remote-tunnel.en.md) | 日本語
+
 VS Code Remote Tunnel を利用して、別ホストのブラウザから Mac の VS Code に接続する場合の設定です。
 
 ```mermaid
@@ -130,7 +132,7 @@ launchctl list | grep 'com.visualstudio.*tunnel'
 > [!TIP]
 > `COPILOT_OTEL_CAPTURE_CONTENT` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
 
-> [!WARINIG]
+> [!WARNING]
 > `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
 
 > [!CAUTION]
@@ -156,7 +158,7 @@ Remote Tunnel へ接続した状態で、コマンドパレットから **Prefer
 > [!TIP]
 > `github.copilot.chat.otel.captureContent` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
 
-> [!WARINIG]
+> [!WARNING]
 > `github.copilot.chat.otel.captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
 
 ## 4. 接続先と認証の確認

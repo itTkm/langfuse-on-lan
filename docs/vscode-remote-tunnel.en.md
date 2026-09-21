@@ -67,6 +67,7 @@ Therefore, the following settings are not reflected through the `code()` wrapper
 - `OTEL_EXPORTER_OTLP_PROTOCOL`
 - `OTEL_EXPORTER_OTLP_HEADERS`
 - `OTEL_RESOURCE_ATTRIBUTES`
+- `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`
 - `COPILOT_OTEL_ENABLED`
 - `COPILOT_OTEL_CAPTURE_CONTENT`
 
@@ -76,8 +77,9 @@ You must set the environment variables in the plist file used by the service. Be
 set -eu
 
 ENV_FILE="$HOME/.config/langfuse/copilot-otel.env"
-PLIST="$HOME/com.visualstudio.code.tunnel.plist"
-LABEL="com.visualstudio.code.tunnel"
+
+# First use `find` to locate the actual plist and replace this value.
+PLIST="/path/to/your/tunnel.plist"
 
 if [[ ! -r "$ENV_FILE" ]]; then
   echo "Environment file not found: $ENV_FILE" >&2
@@ -86,13 +88,16 @@ fi
 
 if [[ ! -r "$PLIST" ]]; then
   echo "Tunnel service plist not found: $PLIST" >&2
-  echo "Please run: code tunnel service install --name macmini first." >&2
+  echo "First locate the plist with the following command." >&2
+  echo 'find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print' >&2
   exit 1
 fi
 
 source "$ENV_FILE"
 
 OTEL_RESOURCE_ATTRIBUTES_VALUE="langfuse.trace.metadata.execution_origin=vscode-chat"
+: "${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:=false}"
+LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$PLIST")"
 
 launchctl unload "$PLIST" 2>/dev/null || true
 
@@ -111,6 +116,7 @@ set_plist_env OTEL_EXPORTER_OTLP_ENDPOINT "$OTEL_EXPORTER_OTLP_ENDPOINT"
 set_plist_env OTEL_EXPORTER_OTLP_PROTOCOL "$OTEL_EXPORTER_OTLP_PROTOCOL"
 set_plist_env OTEL_EXPORTER_OTLP_HEADERS "$OTEL_EXPORTER_OTLP_HEADERS"
 set_plist_env OTEL_RESOURCE_ATTRIBUTES "$OTEL_RESOURCE_ATTRIBUTES_VALUE"
+set_plist_env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT "$OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 set_plist_env COPILOT_OTEL_ENABLED "true"
 set_plist_env COPILOT_OTEL_CAPTURE_CONTENT "false"
 
@@ -121,10 +127,16 @@ launchctl load "$PLIST"
 launchctl start "$LABEL"
 ```
 
-If the service label differs depending on the VS Code distribution, you can inspect it with:
+The plist path and service label can differ depending on the VS Code distribution. Locate the plist with:
 
 ```bash
-launchctl list | grep 'com.visualstudio.*tunnel'
+find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print
+```
+
+Inspect the service label from the plist with:
+
+```bash
+/usr/libexec/PlistBuddy -c 'Print :Label' "/path/to/your/tunnel.plist"
 ```
 
 Note that re-running `code tunnel service install` may regenerate the plist. In that case, re-apply the environment variable settings above.

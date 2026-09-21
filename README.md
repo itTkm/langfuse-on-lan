@@ -386,6 +386,8 @@ langfuse.trace.metadata.execution_origin=vscode-chat
 >
 > Dock などから直接起動した場合や、すでに起動中の VS Code へフォルダを追加した場合は、起動元プロセスの環境変数が引き継がれないことがあります。
 
+VS Code Remote Tunnelをサービスとして起動し、別ホストのブラウザからVS Code Chatを利用する場合は、[VS Code Remote Tunnel 経由の設定](./docs/vscode-remote-tunnel.md)を参照してください。
+
 ## 6. 経路識別
 
 | 経路                     | `execution_origin` |

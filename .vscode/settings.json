@@ -1,0 +1,16 @@
+{
+  "diffEditor.ignoreTrimWhitespace": true,
+  "editor.formatOnSave": true,
+  "editor.formatOnPaste": true,
+  "editor.formatOnType": true,
+  "editor.formatOnSaveMode": "file",
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "[markdown]": {
+    "editor.codeActionsOnSave": {
+      "source.fixAll.markdownlint": "explicit",
+      "source.fixAll.textlint": "explicit"
+    }
+  },
+  "textlint.autoFixOnSave": true,
+  "textlint.languages": ["markdown"]
+}

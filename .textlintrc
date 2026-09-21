@@ -1,0 +1,21 @@
+{
+  "filters": {},
+  "rules": {
+    "preset-ja-spacing": {
+      "ja-space-between-half-and-full-width": {
+        "space": [
+          "alphabets"
+        ],
+        "lintStyledNode": true
+      },
+      "ja-space-around-code": {
+        "before": true,
+        "after": true
+      },
+      "ja-space-around-link": {
+        "before": true,
+        "after": true
+      }
+    }
+  }
+}

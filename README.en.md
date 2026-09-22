@@ -34,7 +34,7 @@ Langfuse URL: http://192.168.1.20:16300
 
 ### About the Port Number
 
-Servers inside the containers listen on `3000/tcp` and `9090/tcp` by default.
+In the official default configuration, a self-hosted Langfuse server listens on `3000/tcp` and `9090/tcp`.
 
 In this README, ports `16300` and `16900` are used as the host exposed ports.  
 These port numbers themselves have no special meaning or security implications. You can change them to any unused ports.

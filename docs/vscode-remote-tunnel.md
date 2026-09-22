@@ -133,7 +133,7 @@ VS Code の配布形態によって plist の場所やサービスラベルが�
 find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print
 ```
 
-サービスラベルはplistから確認できます。
+サービスラベルは plist から確認できます。
 
 ```bash
 /usr/libexec/PlistBuddy -c 'Print :Label' "/path/to/your/tunnel.plist"
@@ -142,10 +142,10 @@ find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.pl
 `code tunnel service install` を再実行すると plist が再生成される場合があります。その場合は、上記の環境変数設定も再実行してください。
 
 > [!TIP]
-> `COPILOT_OTEL_CAPTURE_CONTENT` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
+> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (Copilot CLI/TUI) と `COPILOT_OTEL_CAPTURE_CONTENT` (VS Code Copilot Chat) は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
 
 > [!WARNING]
-> `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
+> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` と `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、それぞれ Copilot CLI/TUI と VS Code Copilot Chat において、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
 
 > [!CAUTION]
 > plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。

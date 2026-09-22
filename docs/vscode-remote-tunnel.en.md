@@ -142,10 +142,10 @@ Inspect the service label from the plist with:
 Note that re-running `code tunnel service install` may regenerate the plist. In that case, re-apply the environment variable settings above.
 
 > [!TIP]
-> `COPILOT_OTEL_CAPTURE_CONTENT` controls whether message bodies (prompts, responses, tool arguments) are transmitted.
+> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (Copilot CLI/TUI) and `COPILOT_OTEL_CAPTURE_CONTENT` (VS Code Copilot Chat) control whether message bodies such as prompts, responses, and tool arguments are transmitted.
 
 > [!WARNING]
-> Setting `COPILOT_OTEL_CAPTURE_CONTENT` to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. Setting this to `false` is strongly recommended, especially in shared environments.
+> Setting `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` or `COPILOT_OTEL_CAPTURE_CONTENT` to `true` may persist sensitive data from Copilot CLI/TUI or VS Code Copilot Chat, making it viewable to authorized users on Langfuse. Setting both to `false` is strongly recommended, especially in shared environments.
 
 > [!CAUTION]
 > The plist contains Langfuse Basic authentication credentials. Do not paste the contents of your plist into public repositories, issues, or logs.

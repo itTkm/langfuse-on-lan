@@ -24,8 +24,9 @@ flowchart LR
 
 ```text
 Host IP: 192.168.1.20
-Port: 16300
-URL: http://192.168.1.20:16300
+Langfuse Web port: 16300
+MinIO S3 API port: 9090
+Langfuse URL: http://192.168.1.20:16300
 ```
 
 > [!NOTE]
@@ -37,6 +38,8 @@ Langfuse コンテナ内部の Web サーバーは、標準の `3000/tcp` で待
 
 この README では、ホスト側の公開ポートに `16300` を使用します。  
 `16300` 自体に特別な意味やセキュリティ上の効果はありません。未使用のポートであれば、別の番号へ変更できます。
+
+Batch Export と Media Upload で使用する MinIO S3 API は、ホスト側の `9090` で公開します。
 
 > [!NOTE]
 > これは、ホスト上で開発中の別の Web アプリケーションやツール類が `3000` を使用しているケースが多いため、ポート重複回避目的で変更しています。
@@ -70,6 +73,7 @@ flowchart LR
 umask 077
 
 LANGFUSE_HOST_PORT=16300
+MINIO_HOST_PORT=9090
 LANGFUSE_HOST_IP=192.168.1.20
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
@@ -85,6 +89,10 @@ cat > .env <<EOF
 # docker-compose.ymlでホスト側に公開するポートです。
 # Langfuseコンテナ内部の待受ポートは引き続き3000です。
 LANGFUSE_HOST_PORT=${LANGFUSE_HOST_PORT}
+
+# Batch ExportのダウンロードおよびMedia Uploadで使用する
+# MinIO S3 APIのホスト側公開ポートです。
+MINIO_HOST_PORT=${MINIO_HOST_PORT}
 
 # Langfuseの認証およびリダイレクトに使用する公開URLです。
 NEXTAUTH_URL=http://${LANGFUSE_HOST_IP}:${LANGFUSE_HOST_PORT}
@@ -142,9 +150,12 @@ LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 
 LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=minio
 LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
 
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
 LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=minio
 LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
 EOF
 
 chmod 600 .env
@@ -154,6 +165,7 @@ chmod 600 .env
 
 ```bash
 LANGFUSE_HOST_PORT=16300
+MINIO_HOST_PORT=9090
 LANGFUSE_HOST_IP=192.168.1.20
 ```
 
@@ -162,32 +174,51 @@ LANGFUSE_HOST_IP=192.168.1.20
 このリポジトリの [docker-compose.yml](./docker-compose.yml) は、[公式の docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml) をベースに以下の修正を加えています。  
 すでに修正済みなので、何らかの意図がない限りは追加の修正は不要です。
 
-#### Langfuse Web のホスト側ポートだけを環境変数化
+#### Langfuse Web と MinIO S3 API のホスト側ポートを環境変数化
 
 ```yaml
 services:
   langfuse-web:
     ports:
       - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000"
+
+  minio:
+    ports:
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
 ```
 
-`0.0.0.0` で公開することで、同一 LAN 上の別ホストからアクセスできます。
+`langfuse-web` に加えて MinIO S3 API を `0.0.0.0` で公開することで、同一 LAN 上の別ホストから Web UI、Batch Export のダウンロード、および Media Upload を利用できます。
 
 LAN 内の特定インターフェースだけで公開したい場合は、ホストのファイアウォールでアクセス元を制限してください。
 
-#### `langfuse-web` 以外の各サービスのポートを非公開化
+#### Batch Export と Media Upload の外部 Endpoint を設定
 
-Langfuse 自身のサービス間通信は Docker Compose の内部ネットワークを使うので、あえて PostgreSQL や Redis などをホストへ publish する必要はありません。公式も外部アクセスが必要なのは基本的に `langfuse-web` だけとしています。
+```env
+LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://192.168.1.20:9090
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:9090
+```
+
+Batch Export は、一時ファイルを MinIO に保存し、署名付き URL を使ってブラウザへダウンロードさせます。Media Upload でも、ブラウザや SDK が署名付き URL を使って MinIO へ直接アクセスします。
+
+そのため、各 Endpoint には Docker 内部の `minio:9000` ではなく、利用するブラウザや SDK から到達できるホストのアドレスを設定します。別ホストから利用する場合、`localhost:9090` はその別ホスト自身を指すため使用できません。
+
+Langfuse コンテナから MinIO への内部通信は、引き続き Docker Compose ネットワーク上の `http://minio:9000` を使用します。
+
+詳細は [Langfuse の Blob Storage 公式ドキュメント](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage) を参照してください。
+
+#### 内部サービスと MinIO Console のポートを非公開化
+
+Langfuse 自身のサービス間通信は Docker Compose の内部ネットワークを使うので、PostgreSQL や Redis などをホストへ publish する必要はありません。
 
 - langfuse-worker
 - clickhouse
-- minio
 - redis
 - postgres
+- MinIO Console (`9001/tcp`)
 
 > [!NOTE]
-> MinIO の公開要否は、Langfuse のメディアアップロード設定に依存します。
-> メディア機能を使用する場合は、公式 Compose の設定と `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT` を確認してください。
+> MinIO のうち、クライアントからのアクセスが必要な S3 API (`9000/tcp`) だけをホストへ公開します。管理用の MinIO Console (`9001/tcp`) は公開しません。
 
 ### 2.3 Compose 設定を確認
 
@@ -409,13 +440,14 @@ VS Code Remote Tunnel をサービスとして起動し、別ホストのブラ�
 
 この構成は LAN 内での利用を想定しています。
 
-`0.0.0.0:${LANGFUSE_HOST_PORT}:3000` で公開すると、ホストの全ネットワークインターフェースで待ち受けます。
+`0.0.0.0:${LANGFUSE_HOST_PORT}:3000` および `0.0.0.0:${MINIO_HOST_PORT}:9000` で公開すると、ホストの全ネットワークインターフェースで待ち受けます。
 
 そのため、次の対策を推奨します。
 
 - ホストのファイアウォールで LAN 内からのアクセスだけを許可する
 - ルーターでインターネット側からのポート転送を設定しない
 - Public Key や Secret Key を共有しない
+- MinIO のアクセスキーやシークレットキーを共有しない
 - 信頼できないネットワークから直接アクセスしない
 - インターネット公開が必要な場合は、TLS、VPN、リバースプロキシ、アクセス制御を別途構成する
 
@@ -484,6 +516,7 @@ docker compose down
 ## 10. 参考資料
 
 - [Langfuse OpenTelemetry](https://langfuse.com/integrations/native/opentelemetry)
+- [Langfuse Blob Storage](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage)
 - [GitHub Copilot CLI OpenTelemetry](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
 - [VS Code OpenTelemetry monitoring](https://code.visualstudio.com/docs/agents/guides/monitoring-agents)
 

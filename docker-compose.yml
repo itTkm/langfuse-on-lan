@@ -10,9 +10,10 @@
 
 # Make sure to update the credential placeholders with your own secrets.
 # We mark them with # CHANGEME in the file below.
-# In addition, we recommend to restrict inbound traffic on the host to langfuse-web (port 3000) and minio (port 9090) only.
-# All other components are bound to localhost (127.0.0.1) to only accept connections from the local machine.
-# External connections from other machines will not be able to reach these services directly.
+# In addition, we recommend restricting inbound traffic on the host to
+# langfuse-web (port 16300 by default) and the MinIO S3 API (port 9090 by default) only.
+# All other component ports are left unpublished, so external machines cannot
+# reach those services directly.
 services:
   langfuse-worker:
     image: docker.langfuse.com/langfuse/langfuse-worker:4
@@ -125,7 +126,7 @@ services:
     depends_on: *langfuse-depends-on
 
     ports:
-      - "0.0.0.0:${LANGFUSE_HOST_PORT:-3000}:3000" # カスタム済み
+      - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000" # カスタム済み
 
     environment:
       <<: *langfuse-worker-env
@@ -183,10 +184,10 @@ services:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret} # CHANGEME
 
-    # 内部ネットワーク利用のため非公開化
-    # ports:
-    #   - 9090:9000
-    #   - 127.0.0.1:9091:9001
+    # Batch Export のダウンロードおよび Media Upload でクライアントから
+    # S3 API へ到達できるように公開。管理用 Console (9001) は非公開。
+    ports:
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
 
     volumes:
       - langfuse_minio_data:/data

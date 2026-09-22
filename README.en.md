@@ -24,8 +24,9 @@ This README uses the following sample configuration:
 
 ```text
 Host IP: 192.168.1.20
-Port: 16300
-URL: http://192.168.1.20:16300
+Langfuse Web port: 16300
+MinIO S3 API port: 9090
+Langfuse URL: http://192.168.1.20:16300
 ```
 
 > [!NOTE]
@@ -37,6 +38,8 @@ The Web server inside the Langfuse container listens on default port `3000/tcp`.
 
 In this README, port `16300` is used as the host exposed port.  
 `16300` has no special meaning or security implications. You can change it to any unused port.
+
+The MinIO S3 API used for Batch Export and Media Upload is published on host port `9090`.
 
 > [!NOTE]
 > Port 3000 is often used by other development Web applications or tools running on the host. The port is modified here to avoid port conflicts.
@@ -70,6 +73,7 @@ Run this at the root of the repository:
 umask 077
 
 LANGFUSE_HOST_PORT=16300
+MINIO_HOST_PORT=9090
 LANGFUSE_HOST_IP=192.168.1.20
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
@@ -85,6 +89,9 @@ cat > .env <<EOF
 # Exposed host port in docker-compose.yml.
 # Container listening port remains 3000.
 LANGFUSE_HOST_PORT=${LANGFUSE_HOST_PORT}
+
+# Host port for the MinIO S3 API used by Batch Export downloads and Media Upload.
+MINIO_HOST_PORT=${MINIO_HOST_PORT}
 
 # Public URL used for Langfuse authentication and redirects.
 NEXTAUTH_URL=http://${LANGFUSE_HOST_IP}:${LANGFUSE_HOST_PORT}
@@ -142,9 +149,12 @@ LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 
 LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=minio
 LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
 
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
 LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=minio
 LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
 EOF
 
 chmod 600 .env
@@ -154,6 +164,7 @@ Before running, update the following variables to match your environment:
 
 ```bash
 LANGFUSE_HOST_PORT=16300
+MINIO_HOST_PORT=9090
 LANGFUSE_HOST_IP=192.168.1.20
 ```
 
@@ -162,32 +173,51 @@ LANGFUSE_HOST_IP=192.168.1.20
 The [docker-compose.yml](./docker-compose.yml) in this repository includes the following modifications based on the [official docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml).  
 These changes are already applied, so no additional edits are necessary unless you have specific requirements.
 
-#### Parametrize Host Port for Langfuse Web Only
+#### Parametrize Host Ports for Langfuse Web and the MinIO S3 API
 
 ```yaml
 services:
   langfuse-web:
     ports:
       - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000"
+
+  minio:
+    ports:
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
 ```
 
-Exposing on `0.0.0.0` allows access from other hosts on the same LAN.
+Exposing `langfuse-web` and the MinIO S3 API on `0.0.0.0` allows other hosts on the same LAN to use the Web UI, download Batch Exports, and use Media Upload.
 
 If you want to expose only on a specific interface within the LAN, restrict source access using the host firewall.
 
-#### Keep Ports Unexposed for Non-Web Services
+#### Configure External Endpoints for Batch Export and Media Upload
 
-Inter-service communication in Langfuse uses the internal Docker Compose network, so there is no need to publish PostgreSQL or Redis to the host. The official documentation also recommends exposing only `langfuse-web` to the outside.
+```env
+LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://192.168.1.20:9090
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:9090
+```
+
+Batch Export stores intermediate files in MinIO and gives the browser a presigned URL to download them. Media Upload likewise uses presigned URLs that browsers and SDKs access directly.
+
+These endpoints must therefore use a host address reachable by the browsers and SDKs, rather than the Docker-internal `minio:9000` address. When clients run on another host, `localhost:9090` points to that client host and cannot be used.
+
+Internal traffic from the Langfuse containers to MinIO continues to use `http://minio:9000` on the Docker Compose network.
+
+For details, see the [Langfuse Blob Storage documentation](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage).
+
+#### Keep Internal Service and MinIO Console Ports Unexposed
+
+Inter-service communication in Langfuse uses the internal Docker Compose network, so there is no need to publish PostgreSQL or Redis to the host.
 
 - langfuse-worker
 - clickhouse
-- minio
 - redis
 - postgres
+- MinIO Console (`9001/tcp`)
 
 > [!NOTE]
-> Whether MinIO needs to be exposed depends on your Langfuse media upload configuration.
-> When using media features, check the official Compose configuration and `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT`.
+> Only the MinIO S3 API (`9000/tcp`), which clients need to access, is published to the host. The MinIO administration Console (`9001/tcp`) remains unexposed.
 
 ### 2.3 Verify Compose Configuration
 
@@ -409,13 +439,14 @@ Using `langfuse.trace.metadata.*` allows filtering and querying as metadata with
 
 This configuration is intended for local area network (LAN) usage.
 
-Exposing via `0.0.0.0:${LANGFUSE_HOST_PORT}:3000` listens on all host network interfaces.
+Exposing via `0.0.0.0:${LANGFUSE_HOST_PORT}:3000` and `0.0.0.0:${MINIO_HOST_PORT}:9000` listens on all host network interfaces.
 
 We recommend the following safety measures:
 
 - Allow access only from within the LAN using host firewall rules.
 - Do not configure port forwarding from the internet on your router.
 - Do not share Public Keys or Secret Keys.
+- Do not share MinIO access keys or secret keys.
 - Do not access directly from untrusted networks.
 - If public internet access is required, configure TLS, VPN, reverse proxies, and access controls separately.
 
@@ -484,6 +515,7 @@ docker compose down
 ## 10. References
 
 - [Langfuse OpenTelemetry](https://langfuse.com/integrations/native/opentelemetry)
+- [Langfuse Blob Storage](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage)
 - [GitHub Copilot CLI OpenTelemetry](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
 - [VS Code OpenTelemetry monitoring](https://code.visualstudio.com/docs/agents/guides/monitoring-agents)
 

@@ -1,5 +1,7 @@
 # Self-Hosted Langfuse on a Local Network
 
+[English](README.en.md) | 日本語
+
 Docker Compose で LAN 内のホストに [Langfuse](https://langfuse.com/) を構築し、OpenTelemetry 対応クライアントから直接トレースを送信する構成です。
 
 OpenTelemetry Collector は使用せず、Langfuse へ OTLP/HTTP で直接送信します。
@@ -369,6 +371,12 @@ VS Code の `settings.json` に設定します。
 }
 ```
 
+> [!TIP]
+> `github.copilot.chat.otel.captureContent` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
+
+> [!WARNING]
+> `github.copilot.chat.otel.captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
+
 認証 header は VS Code の設定ファイルへ書かず、VS Code を起動するプロセスの環境変数へ設定します。
 
 ```bash
@@ -385,6 +393,8 @@ langfuse.trace.metadata.execution_origin=vscode-chat
 > VS Code を完全に終了してから、OpenTelemetry 環境変数を設定したターミナルで `code .` を実行してください。
 >
 > Dock などから直接起動した場合や、すでに起動中の VS Code へフォルダを追加した場合は、起動元プロセスの環境変数が引き継がれないことがあります。
+
+VS Code Remote Tunnel をサービスとして起動し、別ホストのブラウザから VS Code Chat を利用する場合は、[VS Code Remote Tunnel 経由の設定](./docs/vscode-remote-tunnel.md) を参照してください。
 
 ## 6. 経路識別
 

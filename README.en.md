@@ -24,8 +24,9 @@ This README uses the following sample configuration:
 
 ```text
 Host IP: 192.168.1.20
-Port: 16300
-URL: http://192.168.1.20:16300
+Langfuse Web port: 16300
+MinIO S3 API port: 16900
+Langfuse URL: http://192.168.1.20:16300
 ```
 
 > [!NOTE]
@@ -33,13 +34,13 @@ URL: http://192.168.1.20:16300
 
 ### About the Port Number
 
-The Web server inside the Langfuse container listens on default port `3000/tcp`.
+In the official default configuration, a self-hosted Langfuse server listens on `3000/tcp` and `9090/tcp`.
 
-In this README, port `16300` is used as the host exposed port.  
-`16300` has no special meaning or security implications. You can change it to any unused port.
+In this README, ports `16300` and `16900` are used as the host exposed ports.  
+These port numbers themselves have no special meaning or security implications. You can change them to any unused ports.
 
 > [!NOTE]
-> Port 3000 is often used by other development Web applications or tools running on the host. The port is modified here to avoid port conflicts.
+> Ports 3000 and 9090 are often used by other development Web applications or tools running on the host. The ports are modified here to avoid port conflicts.
 
 ```mermaid
 flowchart LR
@@ -70,7 +71,8 @@ Run this at the root of the repository:
 umask 077
 
 LANGFUSE_HOST_PORT=16300
-LANGFUSE_HOST_IP=192.168.1.20
+MINIO_HOST_PORT=16900
+LANGFUSE_HOST=192.168.1.20
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
 CLICKHOUSE_PASSWORD="$(openssl rand -hex 32)"
@@ -86,8 +88,11 @@ cat > .env <<EOF
 # Container listening port remains 3000.
 LANGFUSE_HOST_PORT=${LANGFUSE_HOST_PORT}
 
+# Host port for the MinIO S3 API used by Batch Export downloads and Media Upload.
+MINIO_HOST_PORT=${MINIO_HOST_PORT}
+
 # Public URL used for Langfuse authentication and redirects.
-NEXTAUTH_URL=http://${LANGFUSE_HOST_IP}:${LANGFUSE_HOST_PORT}
+NEXTAUTH_URL=http://${LANGFUSE_HOST}:${LANGFUSE_HOST_PORT}
 
 
 # -----------------------------------------------------------------------------
@@ -140,11 +145,10 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
 LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 
-LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=minio
-LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
 LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=minio
 LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://${LANGFUSE_HOST}:${MINIO_HOST_PORT}
 EOF
 
 chmod 600 .env
@@ -154,7 +158,8 @@ Before running, update the following variables to match your environment:
 
 ```bash
 LANGFUSE_HOST_PORT=16300
-LANGFUSE_HOST_IP=192.168.1.20
+MINIO_HOST_PORT=16900
+LANGFUSE_HOST=192.168.1.20
 ```
 
 ### 2.2 Modifications in `docker-compose.yml`
@@ -162,32 +167,50 @@ LANGFUSE_HOST_IP=192.168.1.20
 The [docker-compose.yml](./docker-compose.yml) in this repository includes the following modifications based on the [official docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml).  
 These changes are already applied, so no additional edits are necessary unless you have specific requirements.
 
-#### Parametrize Host Port for Langfuse Web Only
+#### Parametrize Host Ports for Langfuse Web and the MinIO S3 API
 
 ```yaml
 services:
   langfuse-web:
     ports:
       - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000"
+
+  minio:
+    ports:
+      - "0.0.0.0:${MINIO_HOST_PORT:-16900}:9000"
 ```
 
-Exposing on `0.0.0.0` allows access from other hosts on the same LAN.
+Exposing `minio` in addition to `langfuse-web` on `0.0.0.0` allows other hosts on the same LAN to access the Langfuse Web UI and download Batch Exports in Langfuse.
 
 If you want to expose only on a specific interface within the LAN, restrict source access using the host firewall.
 
-#### Keep Ports Unexposed for Non-Web Services
+#### Configure the External Endpoint for Batch Export
 
-Inter-service communication in Langfuse uses the internal Docker Compose network, so there is no need to publish PostgreSQL or Redis to the host. The official documentation also recommends exposing only `langfuse-web` to the outside.
+```env
+LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:16900
+```
+
+Batch Export stores intermediate files in MinIO and gives the browser a presigned URL to download them.
+
+The External Endpoint must therefore use a host address reachable by the browser, rather than the Docker-internal `minio:9000` address. When the browser runs on another host, `localhost:16900` points to that host and cannot be used.
+
+Internal traffic from Langfuse containers to MinIO continues to use `http://minio:9000` on the Docker Compose network.
+
+For details, see the [Langfuse Blob Storage documentation](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage).
+
+#### Keep Internal Service and MinIO Console Ports Unexposed
+
+Inter-service communication in Langfuse uses the internal Docker Compose network, so there is no need to publish PostgreSQL or Redis to the host.
 
 - langfuse-worker
 - clickhouse
-- minio
 - redis
 - postgres
+- MinIO Console (`9001/tcp`)
 
 > [!NOTE]
-> Whether MinIO needs to be exposed depends on your Langfuse media upload configuration.
-> When using media features, check the official Compose configuration and `LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT`.
+> Only the MinIO S3 API (`9000/tcp`), which clients need to access, is published to the host. The MinIO administration Console (`9001/tcp`) remains unexposed.
 
 ### 2.3 Verify Compose Configuration
 
@@ -280,11 +303,11 @@ chmod 700 ~/.config/langfuse
 umask 077
 
 cat > ~/.config/langfuse/copilot-otel.env <<'EOF'
-export LANGFUSE_HOST_IP="192.168.1.20"
+export LANGFUSE_HOST="192.168.1.20"
 export LANGFUSE_HOST_PORT="16300"
 export LANGFUSE_SECRET_KEY="sk-lf-..."
 export LANGFUSE_PUBLIC_KEY="pk-lf-..."
-export LANGFUSE_BASE_URL="http://${LANGFUSE_HOST_IP}:${LANGFUSE_HOST_PORT}"
+export LANGFUSE_BASE_URL="http://${LANGFUSE_HOST}:${LANGFUSE_HOST_PORT}"
 
 export LANGFUSE_AUTH_STRING="$(
   printf '%s' "${LANGFUSE_PUBLIC_KEY}:${LANGFUSE_SECRET_KEY}" \
@@ -409,13 +432,14 @@ Using `langfuse.trace.metadata.*` allows filtering and querying as metadata with
 
 This configuration is intended for local area network (LAN) usage.
 
-Exposing via `0.0.0.0:${LANGFUSE_HOST_PORT}:3000` listens on all host network interfaces.
+Exposing via `0.0.0.0:${LANGFUSE_HOST_PORT}:3000` and `0.0.0.0:${MINIO_HOST_PORT}:9000` listens on all host network interfaces.
 
 We recommend the following safety measures:
 
 - Allow access only from within the LAN using host firewall rules.
 - Do not configure port forwarding from the internet on your router.
 - Do not share Public Keys or Secret Keys.
+- Do not share MinIO access keys or secret keys.
 - Do not access directly from untrusted networks.
 - If public internet access is required, configure TLS, VPN, reverse proxies, and access controls separately.
 
@@ -484,6 +508,7 @@ docker compose down
 ## 10. References
 
 - [Langfuse OpenTelemetry](https://langfuse.com/integrations/native/opentelemetry)
+- [Langfuse Blob Storage](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage)
 - [GitHub Copilot CLI OpenTelemetry](https://docs.github.com/en/copilot/reference/copilot-cli-reference/cli-command-reference)
 - [VS Code OpenTelemetry monitoring](https://code.visualstudio.com/docs/agents/guides/monitoring-agents)
 

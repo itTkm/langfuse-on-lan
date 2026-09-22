@@ -182,12 +182,9 @@ services:
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minio}
       MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-miniosecret} # CHANGEME
-
-    # 内部ネットワーク利用のため非公開化
-    # ports:
-    #   - 9090:9000
-    #   - 127.0.0.1:9091:9001
-
+    ports:
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000" # カスタム済み
+      # - 127.0.0.1:9091:9001 # 管理用 Console (9001) は非公開
     volumes:
       - langfuse_minio_data:/data
     healthcheck:

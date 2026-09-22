@@ -25,7 +25,7 @@ flowchart LR
 ```text
 Host IP: 192.168.1.20
 Langfuse Web port: 16300
-MinIO S3 API port: 9090
+MinIO S3 API port: 16900
 Langfuse URL: http://192.168.1.20:16300
 ```
 
@@ -34,15 +34,13 @@ Langfuse URL: http://192.168.1.20:16300
 
 ### ポート番号について
 
-Langfuse コンテナ内部の Web サーバーは、標準の `3000/tcp` で待ち受けます。
+コンテナ内部のサーバーは、標準構成では `3000/tcp` および `9090/tcp` で待ち受けます。
 
-この README では、ホスト側の公開ポートに `16300` を使用します。  
-`16300` 自体に特別な意味やセキュリティ上の効果はありません。未使用のポートであれば、別の番号へ変更できます。
-
-Batch Export と Media Upload で使用する MinIO S3 API は、ホスト側の `9090` で公開します。
+この README では、ホスト側の公開ポートに `16300` および `16900` を使用します。  
+これらのポート番号自体に特別な意味やセキュリティ上の効果はありません。未使用のポートであれば、別の番号へ変更できます。
 
 > [!NOTE]
-> これは、ホスト上で開発中の別の Web アプリケーションやツール類が `3000` を使用しているケースが多いため、ポート重複回避目的で変更しています。
+> これは、ホスト上で開発中の別の Web アプリケーションやツール類が `3000` や `9090` を使用しているケースが多いため、ポート重複回避目的で変更しています。
 
 ```mermaid
 flowchart LR
@@ -73,7 +71,7 @@ flowchart LR
 umask 077
 
 LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=9090
+MINIO_HOST_PORT=16900
 LANGFUSE_HOST_IP=192.168.1.20
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
@@ -148,10 +146,6 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
 LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 
-LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=minio
-LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
-
 LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
 LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=minio
 LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
@@ -165,7 +159,7 @@ chmod 600 .env
 
 ```bash
 LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=9090
+MINIO_HOST_PORT=16900
 LANGFUSE_HOST_IP=192.168.1.20
 ```
 
@@ -184,24 +178,23 @@ services:
 
   minio:
     ports:
-      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
+      - "0.0.0.0:${MINIO_HOST_PORT:-16900}:9000"
 ```
 
-`langfuse-web` に加えて MinIO S3 API を `0.0.0.0` で公開することで、同一 LAN 上の別ホストから Web UI、Batch Export のダウンロード、および Media Upload を利用できます。
+`langfuse-web` に加えて `minio` を `0.0.0.0` で公開することで、同一 LAN 上の別ホストから Langfuse Web UI と Langfuse での Batch Export のダウンロードを利用できます。
 
 LAN 内の特定インターフェースだけで公開したい場合は、ホストのファイアウォールでアクセス元を制限してください。
 
-#### Batch Export と Media Upload の外部 Endpoint を設定
+#### Batch Export の外部 Endpoint を設定
 
 ```env
-LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://192.168.1.20:9090
 LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
-LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:9090
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:16900
 ```
 
-Batch Export は、一時ファイルを MinIO に保存し、署名付き URL を使ってブラウザへダウンロードさせます。Media Upload でも、ブラウザや SDK が署名付き URL を使って MinIO へ直接アクセスします。
+Batch Export は、一時ファイルを MinIO に保存し、署名付き URL を使ってブラウザへダウンロードさせます。
 
-そのため、各 Endpoint には Docker 内部の `minio:9000` ではなく、利用するブラウザや SDK から到達できるホストのアドレスを設定します。別ホストから利用する場合、`localhost:9090` はその別ホスト自身を指すため使用できません。
+そのため、External Endpoint には Docker 内部の `minio:9000` ではなく、利用するブラウザから到達できるホストのアドレスを設定します。別ホストから利用する場合、`localhost:16900` はその別ホスト自身を指すため使用できません。
 
 Langfuse コンテナから MinIO への内部通信は、引き続き Docker Compose ネットワーク上の `http://minio:9000` を使用します。
 

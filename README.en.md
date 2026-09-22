@@ -25,7 +25,7 @@ This README uses the following sample configuration:
 ```text
 Host IP: 192.168.1.20
 Langfuse Web port: 16300
-MinIO S3 API port: 9090
+MinIO S3 API port: 16900
 Langfuse URL: http://192.168.1.20:16300
 ```
 
@@ -34,15 +34,13 @@ Langfuse URL: http://192.168.1.20:16300
 
 ### About the Port Number
 
-The Web server inside the Langfuse container listens on default port `3000/tcp`.
+Servers inside the containers listen on `3000/tcp` and `9090/tcp` by default.
 
-In this README, port `16300` is used as the host exposed port.  
-`16300` has no special meaning or security implications. You can change it to any unused port.
-
-The MinIO S3 API used for Batch Export and Media Upload is published on host port `9090`.
+In this README, ports `16300` and `16900` are used as the host exposed ports.  
+These port numbers themselves have no special meaning or security implications. You can change them to any unused ports.
 
 > [!NOTE]
-> Port 3000 is often used by other development Web applications or tools running on the host. The port is modified here to avoid port conflicts.
+> Ports 3000 and 9090 are often used by other development Web applications or tools running on the host. The ports are modified here to avoid port conflicts.
 
 ```mermaid
 flowchart LR
@@ -73,7 +71,7 @@ Run this at the root of the repository:
 umask 077
 
 LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=9090
+MINIO_HOST_PORT=16900
 LANGFUSE_HOST_IP=192.168.1.20
 
 POSTGRES_PASSWORD="$(openssl rand -hex 32)"
@@ -147,10 +145,6 @@ MINIO_ROOT_PASSWORD=${MINIO_ROOT_PASSWORD}
 LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID=minio
 LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
 
-LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID=minio
-LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
-LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://${LANGFUSE_HOST_IP}:${MINIO_HOST_PORT}
-
 LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
 LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID=minio
 LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY=${MINIO_ROOT_PASSWORD}
@@ -164,7 +158,7 @@ Before running, update the following variables to match your environment:
 
 ```bash
 LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=9090
+MINIO_HOST_PORT=16900
 LANGFUSE_HOST_IP=192.168.1.20
 ```
 
@@ -183,26 +177,25 @@ services:
 
   minio:
     ports:
-      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
+      - "0.0.0.0:${MINIO_HOST_PORT:-16900}:9000"
 ```
 
-Exposing `langfuse-web` and the MinIO S3 API on `0.0.0.0` allows other hosts on the same LAN to use the Web UI, download Batch Exports, and use Media Upload.
+Exposing `minio` in addition to `langfuse-web` on `0.0.0.0` allows other hosts on the same LAN to access the Langfuse Web UI and download Batch Exports in Langfuse.
 
 If you want to expose only on a specific interface within the LAN, restrict source access using the host firewall.
 
-#### Configure External Endpoints for Batch Export and Media Upload
+#### Configure the External Endpoint for Batch Export
 
 ```env
-LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT=http://192.168.1.20:9090
 LANGFUSE_S3_BATCH_EXPORT_ENABLED=true
-LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:9090
+LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT=http://192.168.1.20:16900
 ```
 
-Batch Export stores intermediate files in MinIO and gives the browser a presigned URL to download them. Media Upload likewise uses presigned URLs that browsers and SDKs access directly.
+Batch Export stores intermediate files in MinIO and gives the browser a presigned URL to download them.
 
-These endpoints must therefore use a host address reachable by the browsers and SDKs, rather than the Docker-internal `minio:9000` address. When clients run on another host, `localhost:9090` points to that client host and cannot be used.
+The External Endpoint must therefore use a host address reachable by the browser, rather than the Docker-internal `minio:9000` address. When the browser runs on another host, `localhost:16900` points to that host and cannot be used.
 
-Internal traffic from the Langfuse containers to MinIO continues to use `http://minio:9000` on the Docker Compose network.
+Internal traffic from Langfuse containers to MinIO continues to use `http://minio:9000` on the Docker Compose network.
 
 For details, see the [Langfuse Blob Storage documentation](https://langfuse.com/self-hosting/deployment/infrastructure/blobstorage).
 

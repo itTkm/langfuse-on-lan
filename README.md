@@ -353,6 +353,8 @@ copilot() (
 code() (
   source "$HOME/.config/langfuse/copilot-otel.env"
 
+  unset OTEL_EXPORTER_OTLP_ENDPOINT
+
   export OTEL_RESOURCE_ATTRIBUTES="langfuse.trace.metadata.execution_origin=vscode-chat"
 
   # code関数ではなく実際のVS Code CLIを呼ぶ
@@ -384,16 +386,22 @@ langfuse.trace.metadata.execution_origin=manual-tui
 
 ### 5.2 VS Code 組み込みチャット
 
-VS Code の `settings.json` に設定します。
+Desktop VS Code のローカルで **Preferences: Open User Settings (JSON)** を開き、次を追加します。Workspace Settings には設定しません。
 
 ```json
 {
   "github.copilot.chat.otel.enabled": true,
   "github.copilot.chat.otel.exporterType": "otlp-http",
   "github.copilot.chat.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel",
-  "github.copilot.chat.otel.captureContent": false
+  "github.copilot.chat.otel.captureContent": false,
+  "chat.agentHost.otel.enabled": true,
+  "chat.agentHost.otel.exporterType": "otlp-http",
+  "chat.agentHost.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel/v1/traces",
+  "chat.agentHost.otel.captureContent": false
 }
 ```
+
+`192.168.1.20:16300` は Langfuse のホストとポートに置き換えてください。Extension Host は base endpoint に `/v1/traces` を付加し、Agent Host は `/v1/traces` を含む endpoint をそのまま使用します。`code()` ラッパーで `OTEL_EXPORTER_OTLP_ENDPOINT` を unset し、共通ファイルの CLI 向け endpoint がローカル設定を上書きしないようにします。Remote Tunnel はサービスの process env を使用するため、リモート側の OTel User Settings は不要です。
 
 > [!TIP]
 > `github.copilot.chat.otel.captureContent` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
@@ -406,6 +414,8 @@ VS Code の `settings.json` に設定します。
 ```bash
 code .
 ```
+
+OTLP 認証 header は Agent Host から起動する subprocess に継承され得ます。環境変数全体をログへ出力しないでください。
 
 `code` コマンドをラップしている場合は、起動時に次の設定が自動的に適用されます。
 

@@ -352,6 +352,8 @@ copilot() (
 code() (
   source "$HOME/.config/langfuse/copilot-otel.env"
 
+  unset OTEL_EXPORTER_OTLP_ENDPOINT
+
   export OTEL_RESOURCE_ATTRIBUTES="langfuse.trace.metadata.execution_origin=vscode-chat"
 
   # Call actual VS Code CLI rather than the function itself
@@ -383,16 +385,22 @@ langfuse.trace.metadata.execution_origin=manual-tui
 
 ### 5.2 VS Code Built-in Chat
 
-Configure in VS Code's `settings.json`:
+For Desktop VS Code, open **Preferences: Open User Settings (JSON)** locally and add the following (not Workspace Settings):
 
 ```json
 {
   "github.copilot.chat.otel.enabled": true,
   "github.copilot.chat.otel.exporterType": "otlp-http",
   "github.copilot.chat.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel",
-  "github.copilot.chat.otel.captureContent": false
+  "github.copilot.chat.otel.captureContent": false,
+  "chat.agentHost.otel.enabled": true,
+  "chat.agentHost.otel.exporterType": "otlp-http",
+  "chat.agentHost.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel/v1/traces",
+  "chat.agentHost.otel.captureContent": false
 }
 ```
+
+Replace `192.168.1.20:16300` with your Langfuse host and port. The Extension Host appends `/v1/traces` to its base endpoint; the Agent Host uses the full endpoint including `/v1/traces`. The `code()` wrapper unsets `OTEL_EXPORTER_OTLP_ENDPOINT` so the shared CLI endpoint does not override these separate local settings. Remote Tunnel uses the service process environment instead; no remote OTel User Settings are needed.
 
 > [!TIP]
 > `github.copilot.chat.otel.captureContent` controls whether message bodies (prompts, responses, tool arguments) are transmitted.
@@ -405,6 +413,8 @@ Do not write authentication headers into the VS Code settings file; set them via
 ```bash
 code .
 ```
+
+OTLP authentication headers can be inherited by subprocesses launched from the Agent Host. Avoid printing the full process environment to logs.
 
 When wrapping the `code` command, the following setting is applied automatically at startup:
 

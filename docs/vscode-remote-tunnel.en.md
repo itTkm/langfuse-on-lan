@@ -94,6 +94,7 @@ if [[ ! -r "$PLIST" ]]; then
   exit 1
 fi
 
+unset LANGFUSE_BASE_URL OTEL_EXPORTER_OTLP_HEADERS
 source "$ENV_FILE"
 : "${LANGFUSE_BASE_URL:?}"
 : "${OTEL_EXPORTER_OTLP_HEADERS:?}"
@@ -110,9 +111,6 @@ if [[ -e "$LAUNCH_AGENT" && ! -L "$LAUNCH_AGENT" ]]; then
 fi
 chmod 600 "$PLIST"
 DOMAIN="gui/$(id -u)"
-if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-  launchctl bootout "$DOMAIN/$LABEL"
-fi
 
 if ! /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables' "$PLIST" >/dev/null 2>&1; then
   /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables dict' "$PLIST"
@@ -139,6 +137,9 @@ plutil -lint "$PLIST"
 
 if [[ ! -L "$LAUNCH_AGENT" ]] || [[ "$(readlink "$LAUNCH_AGENT")" != "$PLIST" ]]; then
   ln -sfn "$PLIST" "$LAUNCH_AGENT"
+fi
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$DOMAIN/$LABEL"
 fi
 launchctl bootstrap "$DOMAIN" "$PLIST"
 launchctl kickstart "$DOMAIN/$LABEL"
@@ -217,6 +218,6 @@ Additionally, GitHub authentication for VS Code Chat and Copilot CLI authenticat
 
 In this setup, transmissions from VS Code Server to Langfuse use plain HTTP. When accessing from outside the LAN, use HTTPS, a VPN, or a TLS-terminating reverse proxy.
 
-We recommend keeping both `captureContent` and `COPILOT_OTEL_CAPTURE_CONTENT` set to `false` to avoid transmitting sensitive content such as prompts, responses, and tool arguments.
+Set `COPILOT_OTEL_CAPTURE_CONTENT=false` for the Extension Host and `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` for the Agent Host to avoid transmitting prompts, responses, and tool arguments from either pipeline.
 
 OTLP authentication headers can be inherited by subprocesses launched from the Agent Host. Do not print the full process environment to logs.

@@ -94,6 +94,7 @@ if [[ ! -r "$PLIST" ]]; then
   exit 1
 fi
 
+unset LANGFUSE_BASE_URL OTEL_EXPORTER_OTLP_HEADERS
 source "$ENV_FILE"
 : "${LANGFUSE_BASE_URL:?}"
 : "${OTEL_EXPORTER_OTLP_HEADERS:?}"
@@ -110,9 +111,6 @@ if [[ -e "$LAUNCH_AGENT" && ! -L "$LAUNCH_AGENT" ]]; then
 fi
 chmod 600 "$PLIST"
 DOMAIN="gui/$(id -u)"
-if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
-  launchctl bootout "$DOMAIN/$LABEL"
-fi
 
 if ! /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables' "$PLIST" >/dev/null 2>&1; then
   /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables dict' "$PLIST"
@@ -139,6 +137,9 @@ plutil -lint "$PLIST"
 
 if [[ ! -L "$LAUNCH_AGENT" ]] || [[ "$(readlink "$LAUNCH_AGENT")" != "$PLIST" ]]; then
   ln -sfn "$PLIST" "$LAUNCH_AGENT"
+fi
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$DOMAIN/$LABEL"
 fi
 launchctl bootstrap "$DOMAIN" "$PLIST"
 launchctl kickstart "$DOMAIN/$LABEL"
@@ -217,6 +218,6 @@ Remote Tunnel 経由の VS Code Chat では、ブラウザ側のシェル設定�
 
 この構成では、VS Code Server から Langfuse へ HTTP で送信します。LAN 外から利用する場合は、HTTPS、VPN、または TLS 終端するリバースプロキシを使用してください。
 
-`captureContent` および `COPILOT_OTEL_CAPTURE_CONTENT` は `false` に設定し、プロンプト、応答、ツール引数などの本文を送信しない構成を推奨します。
+Extension Host は `COPILOT_OTEL_CAPTURE_CONTENT=false`、Agent Host は `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` に設定し、両 pipeline からプロンプト、応答、ツール引数などの本文を送信しない構成を推奨します。
 
 OTLP 認証 header は Agent Host から起動する subprocess に継承され得ます。環境変数全体をログへ出力しないでください。

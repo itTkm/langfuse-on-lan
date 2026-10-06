@@ -403,10 +403,10 @@ For Desktop VS Code, open **Preferences: Open User Settings (JSON)** locally and
 Replace `192.168.1.20:16300` with your Langfuse host and port. The Extension Host appends `/v1/traces` to its base endpoint; the Agent Host uses the full endpoint including `/v1/traces`. The `code()` wrapper unsets `OTEL_EXPORTER_OTLP_ENDPOINT` so the shared CLI endpoint does not override these separate local settings. Remote Tunnel uses the service process environment instead; no remote OTel User Settings are needed.
 
 > [!TIP]
-> `github.copilot.chat.otel.captureContent` controls whether message bodies (prompts, responses, tool arguments) are transmitted.
+> `github.copilot.chat.otel.captureContent` controls content capture for the Extension Host; `chat.agentHost.otel.captureContent` controls it for the Agent Host. The JSON sets both to `false` to protect both pipelines from transmitting prompts, responses, and tool arguments.
 
 > [!WARNING]
-> Setting `github.copilot.chat.otel.captureContent` to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
+> Setting either `captureContent` option to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
 
 Do not write authentication headers into the VS Code settings file; set them via environment variables in the process that launches VS Code:
 

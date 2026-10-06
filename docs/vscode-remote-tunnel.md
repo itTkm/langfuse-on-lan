@@ -156,10 +156,10 @@ launchctl kickstart "$DOMAIN/$LABEL"
 | Agent Host | `OTEL_EXPORTER_OTLP_ENDPOINT` | `/api/public/otel/v1/traces`（そのまま使用） |
 
 > [!TIP]
-> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (Copilot CLI/TUI) と `COPILOT_OTEL_CAPTURE_CONTENT` (VS Code Copilot Chat) は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
+> `COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host の本文送信を制御し、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host の本文送信を制御します。後者は Copilot CLI/TUI でも使用されます。
 
 > [!WARNING]
-> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` と `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、それぞれ Copilot CLI/TUI と VS Code Copilot Chat において、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
+> いずれかを `true` にすると、対応する pipeline からプロンプト、応答、ツール引数などのセンシティブな本文が送信・永続化される可能性があります。両方を `false` に設定することを推奨します。
 
 > [!CAUTION]
 > plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。

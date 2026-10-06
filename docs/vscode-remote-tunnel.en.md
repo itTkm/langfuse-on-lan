@@ -156,10 +156,10 @@ Re-running `code tunnel service install` may regenerate the original plist. Re-a
 | Agent Host | `OTEL_EXPORTER_OTLP_ENDPOINT` | `/api/public/otel/v1/traces` (used as-is) |
 
 > [!TIP]
-> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (Copilot CLI/TUI) and `COPILOT_OTEL_CAPTURE_CONTENT` (VS Code Copilot Chat) control whether message bodies such as prompts, responses, and tool arguments are transmitted.
+> `COPILOT_OTEL_CAPTURE_CONTENT` controls content transmission for the Extension Host, while `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls it for the Agent Host. The latter is also used by Copilot CLI/TUI.
 
 > [!WARNING]
-> Setting `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` or `COPILOT_OTEL_CAPTURE_CONTENT` to `true` may persist sensitive data from Copilot CLI/TUI or VS Code Copilot Chat, making it viewable to authorized users on Langfuse. Setting both to `false` is strongly recommended, especially in shared environments.
+> Setting either value to `true` may transmit and persist sensitive message content such as prompts, responses, and tool arguments from the corresponding pipeline. We recommend setting both to `false`.
 
 > [!CAUTION]
 > The plist contains Langfuse Basic authentication credentials. Do not paste the contents of your plist into public repositories, issues, or logs.

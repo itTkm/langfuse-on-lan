@@ -53,6 +53,21 @@ Therefore, the following settings are not reflected through the `code()` wrapper
 
 Run the following on the remote Mac as the logged-in user. Choose `TUNNEL_NAME` at the top. The script reads the shared env file, installs the service if its plist is absent (authentication may be required), writes the OTel values, validates the plist, creates the LaunchAgents symlink, and loads the service. Remote OTel User Settings are not needed: the plist process environment configures both hosts.
 
+> [!NOTE]
+> This example applies when VS Code generates `$HOME/com.visualstudio.code.tunnel.plist` on macOS. Keep it as the source of truth and expose it through a symlink in `~/Library/LaunchAgents` so macOS loads the service after login. If a regular file already exists at the link destination, inspect and move it before running the example. If your distribution uses a different location, use its actual plist path; do not create a second service definition.
+
+> [!NOTE]
+> To apply changes to the shared env file, run this script again. The subshell confines sourced credentials to the setup step. Reloading temporarily disconnects an active Tunnel.
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` controls content transmission for the Extension Host, while `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls it for the Agent Host. The latter is also used by Copilot CLI/TUI.
+
+> [!WARNING]
+> Setting either value to `true` may transmit and persist sensitive message content such as prompts, responses, and tool arguments from the corresponding pipeline. We recommend setting both to `false`.
+
+> [!CAUTION]
+> The plist contains Langfuse Basic authentication credentials. Do not paste the contents of your plist into public repositories, issues, or logs.
+
 ```bash
 (
 set -eu
@@ -136,23 +151,10 @@ launchctl kickstart "$DOMAIN/$LABEL"
 )
 ```
 
-This example applies when VS Code generates `$HOME/com.visualstudio.code.tunnel.plist` on macOS. Keep it as the source of truth and expose it through a symlink in `~/Library/LaunchAgents` so macOS loads the service after login. If a regular file already exists at the link destination, inspect and move it before running the example. If your distribution uses a different location, use its actual plist path; do not create a second service definition.
-
-To apply changes to the shared env file, run this script again. The subshell confines sourced credentials to the setup step. Reloading temporarily disconnects an active Tunnel.
-
 | Process | Environment variable | Endpoint |
 | --- | --- | --- |
 | Extension Host | `COPILOT_OTEL_ENDPOINT` | `/api/public/otel` (appends `/v1/traces`) |
 | Agent Host | `OTEL_EXPORTER_OTLP_ENDPOINT` | `/api/public/otel/v1/traces` (used as-is) |
-
-> [!TIP]
-> `COPILOT_OTEL_CAPTURE_CONTENT` controls content transmission for the Extension Host, while `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls it for the Agent Host. The latter is also used by Copilot CLI/TUI.
-
-> [!WARNING]
-> Setting either value to `true` may transmit and persist sensitive message content such as prompts, responses, and tool arguments from the corresponding pipeline. We recommend setting both to `false`.
-
-> [!CAUTION]
-> The plist contains Langfuse Basic authentication credentials. Do not paste the contents of your plist into public repositories, issues, or logs.
 
 ## 3. Verify Connection and Authentication
 

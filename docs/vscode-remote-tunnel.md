@@ -53,6 +53,21 @@ VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://
 
 接続先 Mac のログインユーザーで以下を実行します。冒頭の `TUNNEL_NAME` を指定してください。共通 env の読み込み、plist がない場合のサービス導入（初回は認証が必要な場合があります）、OTel 設定、plist の lint、LaunchAgents の symlink 作成、サービスのロードまで実行します。両 Host の設定には plist の process env を使用するため、Remote OTel User Settings の設定作業はありません。
 
+> [!NOTE]
+> この例は、macOS で VS Code が `$HOME/com.visualstudio.code.tunnel.plist` を生成する場合の設定です。このファイルを正本とし、`~/Library/LaunchAgents` には symlink を配置してログイン後に自動ロードさせます。リンク先の配置場所に通常ファイルがある場合は、内容を確認・退避してから実行してください。配布形態によって場所が異なる場合は、実際の plist を使用し、別のサービス定義を作成しないでください。
+
+> [!NOTE]
+> 共通 env の変更を反映する場合は、このスクリプトを再実行します。読み込んだ認証情報は subshell 内に限定します。稼働中の Tunnel は、設定反映時に一時切断されます。
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host の本文送信を制御し、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host の本文送信を制御します。後者は Copilot CLI/TUI でも使用されます。
+
+> [!WARNING]
+> いずれかを `true` にすると、対応する pipeline からプロンプト、応答、ツール引数などのセンシティブな本文が送信・永続化される可能性があります。両方を `false` に設定することを推奨します。
+
+> [!CAUTION]
+> plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
+
 ```bash
 (
 set -eu
@@ -136,23 +151,10 @@ launchctl kickstart "$DOMAIN/$LABEL"
 )
 ```
 
-この例は、macOS で VS Code が `$HOME/com.visualstudio.code.tunnel.plist` を生成する場合の設定です。このファイルを正本とし、`~/Library/LaunchAgents` には symlink を配置してログイン後に自動ロードさせます。リンク先の配置場所に通常ファイルがある場合は、内容を確認・退避してから実行してください。配布形態によって場所が異なる場合は、実際の plist を使用し、別のサービス定義を作成しないでください。
-
-共通 env の変更を反映する場合は、このスクリプトを再実行します。読み込んだ認証情報は subshell 内に限定します。稼働中の Tunnel は、設定反映時に一時切断されます。
-
 | プロセス | 環境変数 | endpoint |
 | --- | --- | --- |
 | Extension Host | `COPILOT_OTEL_ENDPOINT` | `/api/public/otel`（`/v1/traces` を付加） |
 | Agent Host | `OTEL_EXPORTER_OTLP_ENDPOINT` | `/api/public/otel/v1/traces`（そのまま使用） |
-
-> [!TIP]
-> `COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host の本文送信を制御し、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host の本文送信を制御します。後者は Copilot CLI/TUI でも使用されます。
-
-> [!WARNING]
-> いずれかを `true` にすると、対応する pipeline からプロンプト、応答、ツール引数などのセンシティブな本文が送信・永続化される可能性があります。両方を `false` に設定することを推奨します。
-
-> [!CAUTION]
-> plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
 
 ## 3. 接続先と認証の確認
 

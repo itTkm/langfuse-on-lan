@@ -67,6 +67,9 @@ flowchart LR
 
 リポジトリのルートで実行します。
 
+> [!NOTE]
+> 以下のスクリプトを実行する前に、冒頭の `LANGFUSE_HOST_PORT=16300`、`MINIO_HOST_PORT=16900`、`LANGFUSE_HOST=192.168.1.20` を環境に合わせて変更してください。
+
 ```bash
 umask 077
 
@@ -155,14 +158,6 @@ EOF
 chmod 600 .env
 ```
 
-実行前に、次の値を環境に合わせて変更してください。
-
-```bash
-LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=16900
-LANGFUSE_HOST=192.168.1.20
-```
-
 ### 2.2 `docker-compose.yml` の修正
 
 このリポジトリの [docker-compose.yml](./docker-compose.yml) は、[公式の docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml) をベースに以下の修正を加えています。  
@@ -215,6 +210,9 @@ Langfuse 自身のサービス間通信は Docker Compose の内部ネットワ�
 
 ### 2.3 Compose 設定を確認
 
+> [!CAUTION]
+> `docker compose config` には展開後のパスワードやシークレットが表示される場合があります。出力をログや Issue へ貼り付けないでください。
+
 `.env` が正しく読み込まれていることを確認します。
 
 ```bash
@@ -226,9 +224,6 @@ docker compose config --environment
 ```bash
 docker compose config
 ```
-
-> [!CAUTION]
-> `docker compose config` には展開後のパスワードやシークレットが表示される場合があります。出力をログや Issue へ貼り付けないでください。
 
 ### 2.4 起動
 
@@ -295,7 +290,17 @@ Langfuse は OTLP/HTTP の JSON または protobuf を受け付けます。gRPC 
 
 ### 4.1 共通認証環境ファイル
 
-以下を実行する前に、ファイル冒頭の2つの capture 変数で `true` / `false` を選択し、Langfuse のホストと Project Key を指定します。`COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host と Copilot CLI/TUI 用です。`true` は本文を送信し、`false` は本文を送信しません。この選択値を後続のクライアント設定で使用します。
+> [!NOTE]
+> 以下のスクリプトを実行する前に、生成するファイル冒頭のホスト・ポートと2つの capture 値（`true` / `false`）を指定してください。`sk-lf-...` と `pk-lf-...` は、Langfuse Web UI で作成した実際の Project Key へ置き換えてください。この選択値を後続のクライアント設定で使用します。
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host と Copilot CLI/TUI 用です。`true` は本文を送信し、`false` は本文を送信しません。
+
+> [!WARNING]
+> いずれかの capture 変数を `true` にすると、センシティブな情報が Langfuse に永続化され、権限のあるユーザーが閲覧できる可能性があります。特に共有環境などでは `false` を設定することを推奨します。
+
+> [!CAUTION]
+> Secret Key を Git リポジトリへ保存しないでください。
 
 ```bash
 mkdir -p ~/.config/langfuse
@@ -327,11 +332,6 @@ EOF
 
 chmod 600 ~/.config/langfuse/copilot-otel.env
 ```
-
-`sk-lf-...` と `pk-lf-...` は、Langfuse Web UI で作成した実際の Project Key へ置き換えてください。
-
-> [!CAUTION]
-> Secret Key を Git リポジトリへ保存しないでください。
 
 > [!TIP]
 > `x-langfuse-ingestion-version: 4` を指定すると、Langfuse v4 のデータモデルや Observations API への反映遅延を抑えられます。
@@ -391,6 +391,12 @@ langfuse.trace.metadata.execution_origin=manual-tui
 
 共通 env のホストと capture の選択値から、次のブロックで JSON を生成します。Desktop VS Code のローカルで **Preferences: Open User Settings (JSON)** を開き、出力された各項目を既存のオブジェクトに追加します。Workspace Settings には設定しません。ホストや capture の選択値を変更した場合も、このブロックで生成し直してください。
 
+> [!TIP]
+> `github.copilot.chat.otel.captureContent` は Extension Host、`chat.agentHost.otel.captureContent` は Agent Host の本文送信を制御します。生成した JSON には、共通 env で選択したそれぞれの値が真偽値として反映されます。
+
+> [!WARNING]
+> いずれかの `captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
+
 ```bash
 (
 set -eu
@@ -422,13 +428,12 @@ EOF
 
 Extension Host は base endpoint に `/v1/traces` を付加し、Agent Host は `/v1/traces` を含む endpoint をそのまま使用します。`code()` ラッパーで `OTEL_EXPORTER_OTLP_ENDPOINT` を unset し、共通ファイルの CLI 向け endpoint がローカル設定を上書きしないようにします。Remote Tunnel はサービスの process env を使用するため、リモート側の OTel User Settings は不要です。
 
-> [!TIP]
-> `github.copilot.chat.otel.captureContent` は Extension Host、`chat.agentHost.otel.captureContent` は Agent Host の本文送信を制御します。生成した JSON には、共通 env で選択したそれぞれの値が真偽値として反映されます。
+認証 header は VS Code の設定ファイルへ書かず、VS Code を起動するプロセスの環境変数へ設定します。
 
 > [!WARNING]
-> いずれかの `captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
-
-認証 header は VS Code の設定ファイルへ書かず、VS Code を起動するプロセスの環境変数へ設定します。
+> VS Code を完全に終了してから、OpenTelemetry 環境変数を設定したターミナルで `code .` を実行してください。
+>
+> Dock などから直接起動した場合や、すでに起動中の VS Code へフォルダを追加した場合は、起動元プロセスの環境変数が引き継がれないことがあります。
 
 ```bash
 code .
@@ -441,11 +446,6 @@ OTLP 認証 header は Agent Host から起動する subprocess に継承され�
 ```text
 langfuse.trace.metadata.execution_origin=vscode-chat
 ```
-
-> [!WARNING]
-> VS Code を完全に終了してから、OpenTelemetry 環境変数を設定したターミナルで `code .` を実行してください。
->
-> Dock などから直接起動した場合や、すでに起動中の VS Code へフォルダを追加した場合は、起動元プロセスの環境変数が引き継がれないことがあります。
 
 VS Code Remote Tunnel をサービスとして起動し、別ホストのブラウザから VS Code Chat を利用する場合は、[VS Code Remote Tunnel 経由の設定](./docs/vscode-remote-tunnel.md) を参照してください。
 

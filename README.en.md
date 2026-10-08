@@ -67,6 +67,9 @@ flowchart LR
 
 Run this at the root of the repository:
 
+> [!NOTE]
+> Before running the script below, change `LANGFUSE_HOST_PORT=16300`, `MINIO_HOST_PORT=16900`, and `LANGFUSE_HOST=192.168.1.20` at its top to match your environment.
+
 ```bash
 umask 077
 
@@ -154,14 +157,6 @@ EOF
 chmod 600 .env
 ```
 
-Before running, update the following variables to match your environment:
-
-```bash
-LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=16900
-LANGFUSE_HOST=192.168.1.20
-```
-
 ### 2.2 Modifications in `docker-compose.yml`
 
 The [docker-compose.yml](./docker-compose.yml) in this repository includes the following modifications based on the [official docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml).  
@@ -214,6 +209,9 @@ Inter-service communication in Langfuse uses the internal Docker Compose network
 
 ### 2.3 Verify Compose Configuration
 
+> [!CAUTION]
+> `docker compose config` may display expanded passwords and secrets. Do not paste the output into logs or public issues.
+
 Verify that `.env` is loaded correctly:
 
 ```bash
@@ -225,9 +223,6 @@ You can inspect the expanded Compose configuration with:
 ```bash
 docker compose config
 ```
-
-> [!CAUTION]
-> `docker compose config` may display expanded passwords and secrets. Do not paste the output into logs or public issues.
 
 ### 2.4 Start Services
 
@@ -294,7 +289,17 @@ Langfuse accepts OTLP/HTTP in JSON or protobuf formats. gRPC is not used.
 
 ### 4.1 Shared Authentication Environment File
 
-Before running the following block, choose `true` or `false` for the two capture variables at the top of the file, and enter your Langfuse host and Project keys. `COPILOT_OTEL_CAPTURE_CONTENT` controls the Extension Host; `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls the Agent Host and Copilot CLI/TUI. `true` sends message content; `false` omits it. These choices are used by the client setup steps below.
+> [!NOTE]
+> Before running the script below, set the Langfuse host and port and choose `true` / `false` for both capture variables at the top of the generated file. Replace `sk-lf-...` and `pk-lf-...` with the actual Project keys created in the Langfuse Web UI. The following client setup steps use these choices.
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` controls the Extension Host; `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls the Agent Host and Copilot CLI/TUI. `true` sends message content; `false` omits it.
+
+> [!WARNING]
+> Setting either capture variable to `true` may persist sensitive information in Langfuse, where authorized users can view it. We recommend `false`, especially in shared environments.
+
+> [!CAUTION]
+> Never commit your Secret Key to a Git repository.
 
 ```bash
 mkdir -p ~/.config/langfuse
@@ -326,11 +331,6 @@ EOF
 
 chmod 600 ~/.config/langfuse/copilot-otel.env
 ```
-
-Replace `sk-lf-...` and `pk-lf-...` with your actual Project keys created in the Langfuse Web UI.
-
-> [!CAUTION]
-> Never commit your Secret Key to a Git repository.
 
 > [!TIP]
 > Specifying `x-langfuse-ingestion-version: 4` reduces ingestion delay for the Langfuse v4 data model and Observations API.
@@ -390,6 +390,12 @@ langfuse.trace.metadata.execution_origin=manual-tui
 
 Run the following block to generate JSON from the host and capture choices in the shared env file. In Desktop VS Code, open **Preferences: Open User Settings (JSON)** locally and merge the generated entries into the existing object (not Workspace Settings). Re-run this block when changing the host or capture choices.
 
+> [!TIP]
+> `github.copilot.chat.otel.captureContent` controls content capture for the Extension Host; `chat.agentHost.otel.captureContent` controls it for the Agent Host. The generated JSON uses the respective capture choices from the shared env file as boolean values.
+
+> [!WARNING]
+> Setting either `captureContent` option to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
+
 ```bash
 (
 set -eu
@@ -421,13 +427,12 @@ EOF
 
 The Extension Host appends `/v1/traces` to its base endpoint; the Agent Host uses the full endpoint including `/v1/traces`. The `code()` wrapper unsets `OTEL_EXPORTER_OTLP_ENDPOINT` so the shared CLI endpoint does not override these separate local settings. Remote Tunnel uses the service process environment instead; no remote OTel User Settings are needed.
 
-> [!TIP]
-> `github.copilot.chat.otel.captureContent` controls content capture for the Extension Host; `chat.agentHost.otel.captureContent` controls it for the Agent Host. The generated JSON uses the respective capture choices from the shared env file as boolean values.
+Do not write authentication headers into the VS Code settings file; set them via environment variables in the process that launches VS Code:
 
 > [!WARNING]
-> Setting either `captureContent` option to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
-
-Do not write authentication headers into the VS Code settings file; set them via environment variables in the process that launches VS Code:
+> Completely quit VS Code before running `code .` in a terminal with the OpenTelemetry environment variables set.
+>
+> If launched directly from the Dock or if you attach a folder to an already-running VS Code instance, the parent process environment variables might not be inherited.
 
 ```bash
 code .
@@ -440,11 +445,6 @@ When wrapping the `code` command, the following setting is applied automatically
 ```text
 langfuse.trace.metadata.execution_origin=vscode-chat
 ```
-
-> [!WARNING]
-> Completely quit VS Code before running `code .` in a terminal with the OpenTelemetry environment variables set.
->
-> If launched directly from the Dock or if you attach a folder to an already-running VS Code instance, the parent process environment variables might not be inherited.
 
 If you run VS Code Remote Tunnel as a service and access VS Code Chat from a browser on a different host, refer to [VS Code Remote Tunnel Setup](./docs/vscode-remote-tunnel.en.md).
 

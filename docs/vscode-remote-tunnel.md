@@ -73,7 +73,7 @@ VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://
 set -eu
 umask 077
 
-TUNNEL_NAME="macmini"
+TUNNEL_NAME="mac-mini"
 ENV_FILE="$HOME/.config/langfuse/copilot-otel.env"
 
 # VS Code が生成した正本を使用します。
@@ -161,7 +161,12 @@ launchctl kickstart "$DOMAIN/$LABEL"
 Remote Tunnel の接続先ホスト上で、Langfuse のエンドポイントへ到達できることを確認します。
 
 ```bash
-curl -i "http://192.168.1.20:16300"
+(
+set -eu
+unset LANGFUSE_BASE_URL
+source "$HOME/.config/langfuse/copilot-otel.env"
+curl -i "${LANGFUSE_BASE_URL:?}"
+)
 ```
 
 Langfuse Web の応答が返れば、ネットワーク経路は確認できています。

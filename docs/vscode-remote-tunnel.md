@@ -6,10 +6,10 @@ VS Code Remote Tunnel を利用して、別ホストのブラウザから Mac �
 
 ```mermaid
 flowchart LR
-  subgraph MBA[開発作業用 MacBook Air]
+  subgraph MBA[クライアント]
     A[ブラウザ / vscode.dev]
   end
-  subgraph MINI[開発用 Mac mini]
+  subgraph MINI[macOS Tunnel ホスト]
     C[VS Code Server]
   end
   subgraph LF[Langfuse サーバー]
@@ -24,23 +24,6 @@ flowchart LR
 OpenTelemetry の送信元はブラウザではなく、Remote Tunnel 接続先で動作する VS Code Server です。
 そのため、Langfuse のエンドポイントへ接続できるようにする設定は、接続先ホスト側で行います。
 
-私の検証環境は VS Code Server と Langfuse サーバーが同じ Mac mini に同居しているので、実態は以下のような構成になっています。
-
-```mermaid
-flowchart LR
-  subgraph MBA[開発作業用 MacBook Air]
-    A[ブラウザ / vscode.dev]
-  end
-  subgraph MINI[開発用 Mac mini]
-    C[VS Code Server]
-    subgraph DOCKER[Docker]
-      D[Langfuse]
-    end
-    C -->|OTLP/HTTP| D
-  end
-  A -->|VS Code Remote Tunnel| C
-```
-
 ## 1. 前提
 
 README の「OpenTelemetry 直接送信」にある共通認証環境ファイルを、接続先ホスト上に作成済みであることを前提にします。
@@ -49,15 +32,11 @@ README の「OpenTelemetry 直接送信」にある共通認証環境ファイ�
 ~/.config/langfuse/copilot-otel.env
 ```
 
-Remote Tunnel 自体は、次のコマンドでサービスとしてインストール済みとします。
-
-```bash
-code tunnel service install --name macmini
-```
+接続先の Mac に VS Code を導入し、ターミナルで `code` コマンドを使えるようにします。Tunnel サービスのインストール、plist の生成、LaunchAgents の symlink 作成は、次のスクリプトで実行します。共通 env の冒頭にある2つの capture 変数は、構築者が `true` / `false` を選択してから進めてください。
 
 VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://code.visualstudio.com/docs/remote/tunnels) を参照してください。
 
-## 2. トンネルサービスへ OpenTelemetry 環境変数を設定
+## 2. Tunnel サービスのインストールと設定
 
 `code tunnel service` は macOS の `launchd` で起動します。`launchd` は、サービスをインストールしたターミナルの環境変数や `~/.zshrc` を読み込みません。
 
@@ -68,38 +47,75 @@ VS Code Remote Tunnel の詳細は、[VS Code 公式ドキュメント](https://
 - `OTEL_EXPORTER_OTLP_HEADERS`
 - `OTEL_RESOURCE_ATTRIBUTES`
 - `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT`
+- `COPILOT_OTEL_ENDPOINT`
 - `COPILOT_OTEL_ENABLED`
 - `COPILOT_OTEL_CAPTURE_CONTENT`
 
-サービスが使用する plist へ環境変数を設定します。以下は、既存の共通認証環境ファイルから値を読み込み、VS Code Tunnel のサービス plist へ反映する例です。
+接続先 Mac のログインユーザーで以下を実行します。冒頭の `TUNNEL_NAME` を指定してください。共通 env の読み込み、plist がない場合のサービス導入（初回は認証が必要な場合があります）、OTel 設定、plist の lint、LaunchAgents の symlink 作成、サービスのロードまで実行します。両 Host の設定には plist の process env を使用するため、Remote OTel User Settings の設定作業はありません。
+
+> [!NOTE]
+> この例は、macOS で VS Code が `$HOME/com.visualstudio.code.tunnel.plist` を生成する場合の設定です。このファイルを正本とし、`~/Library/LaunchAgents` には symlink を配置してログイン後に自動ロードさせます。リンク先の配置場所に通常ファイルがある場合は、内容を確認・退避してから実行してください。配布形態によって場所が異なる場合は、実際の plist を使用し、別のサービス定義を作成しないでください。
+
+> [!NOTE]
+> 共通 env の変更を反映する場合は、このスクリプトを再実行します。読み込んだ認証情報は subshell 内に限定します。稼働中の Tunnel は、設定反映時に一時切断されます。
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` は Extension Host の本文送信を制御し、`OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` は Agent Host の本文送信を制御します。後者は Copilot CLI/TUI でも使用されます。
+
+> [!WARNING]
+> いずれかを `true` にすると、対応する pipeline からプロンプト、応答、ツール引数などのセンシティブな本文が送信・永続化される可能性があります。両方を `false` に設定することを推奨します。
+
+> [!CAUTION]
+> plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
 
 ```bash
+(
 set -eu
+umask 077
 
+TUNNEL_NAME="macmini"
 ENV_FILE="$HOME/.config/langfuse/copilot-otel.env"
 
-# 先に `find` で実際のplistのパスを確認し、その値に置き換えます。
-PLIST="/path/to/your/tunnel.plist"
+# VS Code が生成した正本を使用します。
+PLIST="$HOME/com.visualstudio.code.tunnel.plist"
+LAUNCH_AGENT="$HOME/Library/LaunchAgents/com.visualstudio.code.tunnel.plist"
 
 if [[ ! -r "$ENV_FILE" ]]; then
   echo "環境ファイルが見つかりません: $ENV_FILE" >&2
   exit 1
 fi
 
-if [[ ! -r "$PLIST" ]]; then
-  echo "Tunnelサービスのplistが見つかりません: $PLIST" >&2
-  echo "先に次のコマンドでplistのパスを確認してください。" >&2
-  echo 'find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print' >&2
-  exit 1
-fi
-
+unset LANGFUSE_BASE_URL OTEL_EXPORTER_OTLP_HEADERS \
+  COPILOT_OTEL_CAPTURE_CONTENT OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
 source "$ENV_FILE"
+: "${LANGFUSE_BASE_URL:?}"
+: "${OTEL_EXPORTER_OTLP_HEADERS:?}"
+LANGFUSE_BASE_URL="${LANGFUSE_BASE_URL%/}"
+for capture_value in "$COPILOT_OTEL_CAPTURE_CONTENT" "$OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"; do
+  case "$capture_value" in
+    true|false) ;;
+    *) echo "Capture settings must be true or false" >&2; exit 1 ;;
+  esac
+done
 
 OTEL_RESOURCE_ATTRIBUTES_VALUE="langfuse.trace.metadata.execution_origin=vscode-chat"
-: "${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT:=false}"
-LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$PLIST")"
 
-launchctl unload "$PLIST" 2>/dev/null || true
+# LaunchAgents の既存の通常ファイルを上書きしません。
+mkdir -p "$(dirname "$LAUNCH_AGENT")"
+if [[ -e "$LAUNCH_AGENT" && ! -L "$LAUNCH_AGENT" ]]; then
+  echo "既存ファイルを確認・退避してください: $LAUNCH_AGENT" >&2
+  exit 1
+fi
+if [[ ! -f "$PLIST" ]]; then
+  command code tunnel service install --name "$TUNNEL_NAME"
+fi
+if [[ ! -r "$PLIST" ]]; then
+  echo "Tunnelサービスのplistが見つかりません: $PLIST" >&2
+  exit 1
+fi
+LABEL="$(/usr/libexec/PlistBuddy -c 'Print :Label' "$PLIST")"
+chmod 600 "$PLIST"
+DOMAIN="gui/$(id -u)"
 
 if ! /usr/libexec/PlistBuddy -c 'Print :EnvironmentVariables' "$PLIST" >/dev/null 2>&1; then
   /usr/libexec/PlistBuddy -c 'Add :EnvironmentVariables dict' "$PLIST"
@@ -112,68 +128,35 @@ set_plist_env() {
   plutil -insert "EnvironmentVariables.${key}" -string "$value" "$PLIST"
 }
 
-set_plist_env OTEL_EXPORTER_OTLP_ENDPOINT "$OTEL_EXPORTER_OTLP_ENDPOINT"
-set_plist_env OTEL_EXPORTER_OTLP_PROTOCOL "$OTEL_EXPORTER_OTLP_PROTOCOL"
+set_plist_env COPILOT_OTEL_ENDPOINT "${LANGFUSE_BASE_URL}/api/public/otel"
+set_plist_env OTEL_EXPORTER_OTLP_ENDPOINT "${LANGFUSE_BASE_URL}/api/public/otel/v1/traces"
+set_plist_env OTEL_EXPORTER_OTLP_PROTOCOL "http/json"
 set_plist_env OTEL_EXPORTER_OTLP_HEADERS "$OTEL_EXPORTER_OTLP_HEADERS"
 set_plist_env OTEL_RESOURCE_ATTRIBUTES "$OTEL_RESOURCE_ATTRIBUTES_VALUE"
 set_plist_env OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT "$OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"
 set_plist_env COPILOT_OTEL_ENABLED "true"
-set_plist_env COPILOT_OTEL_CAPTURE_CONTENT "false"
+set_plist_env COPILOT_OTEL_CAPTURE_CONTENT "$COPILOT_OTEL_CAPTURE_CONTENT"
 
 chmod 600 "$PLIST"
 plutil -lint "$PLIST"
 
-launchctl load "$PLIST"
-launchctl start "$LABEL"
+if [[ ! -L "$LAUNCH_AGENT" ]] || [[ "$(readlink "$LAUNCH_AGENT")" != "$PLIST" ]]; then
+  ln -sfn "$PLIST" "$LAUNCH_AGENT"
+fi
+if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+  launchctl bootout "$DOMAIN/$LABEL"
+fi
+launchctl bootstrap "$DOMAIN" "$PLIST"
+launchctl kickstart "$DOMAIN/$LABEL"
+)
 ```
 
-VS Code の配布形態によって plist の場所やサービスラベルが異なります。plist の場所は次で確認できます。
+| プロセス | 環境変数 | endpoint |
+| --- | --- | --- |
+| Extension Host | `COPILOT_OTEL_ENDPOINT` | `/api/public/otel`（`/v1/traces` を付加） |
+| Agent Host | `OTEL_EXPORTER_OTLP_ENDPOINT` | `/api/public/otel/v1/traces`（そのまま使用） |
 
-```bash
-find "$HOME" "$HOME/Library/LaunchAgents" -maxdepth 1 -type f -name "*.tunnel.plist" -print
-```
-
-サービスラベルは plist から確認できます。
-
-```bash
-/usr/libexec/PlistBuddy -c 'Print :Label' "/path/to/your/tunnel.plist"
-```
-
-`code tunnel service install` を再実行すると plist が再生成される場合があります。その場合は、上記の環境変数設定も再実行してください。
-
-> [!TIP]
-> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` (Copilot CLI/TUI) と `COPILOT_OTEL_CAPTURE_CONTENT` (VS Code Copilot Chat) は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
-
-> [!WARNING]
-> `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` と `COPILOT_OTEL_CAPTURE_CONTENT` を `true` にすると、それぞれ Copilot CLI/TUI と VS Code Copilot Chat において、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
-
-> [!CAUTION]
-> plist には Langfuse の Basic 認証情報が保存されます。plist の内容を公開リポジトリ、Issue、ログへ貼り付けないでください。
-
-## 3. VS Code Chat 側の設定
-
-Remote Tunnel へ接続した状態で、コマンドパレットから **Preferences: Open User Settings (JSON)** を開き、次を追加します。
-
-```json
-{
-  "github.copilot.chat.otel.enabled": true,
-  "github.copilot.chat.otel.exporterType": "otlp-http",
-  "github.copilot.chat.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel",
-  "github.copilot.chat.otel.captureContent": false
-}
-```
-
-`192.168.1.20:16300` は、Langfuse ホストの IP アドレスと公開ポートへ置き換えてください。
-
-これらは VS Code Chat の設定であり、`.zshrc` や統合ターミナルの環境変数だけでは設定できません。Workspace Settings ではなく、User Settings JSON へ追加してください。
-
-> [!TIP]
-> `github.copilot.chat.otel.captureContent` は、プロンプト、応答、ツール引数などの本文を送信するかどうかの設定です。
-
-> [!WARNING]
-> `github.copilot.chat.otel.captureContent` を `true` にすると、センシティブな情報が永続化されてしまい Langfuse 上で権限のあるユーザーに覗き見られてしまう可能性があります。特に共有環境などでは `false` を設定することを推奨します。
-
-## 4. 接続先と認証の確認
+## 3. 接続先と認証の確認
 
 Remote Tunnel の接続先ホスト上で、Langfuse のエンドポイントへ到達できることを確認します。
 
@@ -183,9 +166,9 @@ curl -i "http://192.168.1.20:16300"
 
 Langfuse Web の応答が返れば、ネットワーク経路は確認できています。
 
-その後、VS Code Chat で Copilot へログインし、テストメッセージを送信します。認証状態が不安定な場合は、VS Code のアカウントメニューから GitHub アカウントを一度サインアウトしてから、再度サインインしてください。
+ブラウザで `https://vscode.dev/tunnel/` を開き、Tunnel の導入時に使用したアカウントでログインして、設定した Tunnel 名を選択します。VS Code Chat で Copilot へログインし、テストメッセージを送信します。
 
-## 5. 動作確認
+## 4. 動作確認
 
 次を確認します。
 
@@ -197,7 +180,7 @@ Langfuse Web の応答が返れば、ネットワーク経路は確認できて�
 langfuse.trace.metadata.execution_origin=vscode-chat
 ```
 
-VS Code のログに、次のような OpenTelemetry 設定が出力されることも確認できます。
+VS Code のログで endpoint と capture 値が選択した設定と一致することを確認します。以下は Extension Host の capture を `false` にした場合の例です。
 
 ```text
 [OTel] Instrumentation enabled
@@ -206,19 +189,23 @@ endpoint=http://192.168.1.20:16300/api/public/otel
 captureContent=false
 ```
 
-## 6. CLI/TUI との違い
+macOS の再起動・ログイン後にも、Tunnel が自動起動し、Copilot Chat のメッセージから Langfuse に Trace が届くことを確認してください。
+
+## 5. CLI/TUI との違い
 
 | 利用経路        | 実行場所                              | 設定方法                           | `execution_origin` |
 | --------------- | ------------------------------------- | ---------------------------------- | ------------------ |
 | Copilot CLI/TUI | 統合ターミナル                        | `~/.zshrc` の `copilot()` ラッパー | `manual-tui`       |
-| VS Code Chat    | Remote Tunnel 接続先の VS Code Server | User Settings JSON + launchd plist | `vscode-chat`      |
+| VS Code Chat    | Remote Tunnel 接続先の VS Code Server | launchd plist process env | `vscode-chat`      |
 
 Remote Tunnel 経由の VS Code Chat では、ブラウザ側のシェル設定や、ブラウザを開いたホストの `~/.zshrc` は接続先の VS Code Server へ伝搬しません。
 
 また、VS Code Chat の GitHub 認証と、ターミナルで実行する Copilot CLI の認証は別経路です。片方のサインイン状態だけで、もう片方が自動的に有効になるとは限りません。
 
-## 7. セキュリティ上の注意
+## 6. セキュリティ上の注意
 
 この構成では、VS Code Server から Langfuse へ HTTP で送信します。LAN 外から利用する場合は、HTTPS、VPN、または TLS 終端するリバースプロキシを使用してください。
 
-`captureContent` および `COPILOT_OTEL_CAPTURE_CONTENT` は `false` に設定し、プロンプト、応答、ツール引数などの本文を送信しない構成を推奨します。
+Extension Host は `COPILOT_OTEL_CAPTURE_CONTENT=false`、Agent Host は `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false` に設定し、両 pipeline からプロンプト、応答、ツール引数などの本文を送信しない構成を推奨します。
+
+OTLP 認証 header は Agent Host から起動する subprocess に継承され得ます。環境変数全体をログへ出力しないでください。

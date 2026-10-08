@@ -67,6 +67,9 @@ flowchart LR
 
 Run this at the root of the repository:
 
+> [!NOTE]
+> Before running the script below, change `LANGFUSE_HOST_PORT=16300`, `MINIO_HOST_PORT=16900`, and `LANGFUSE_HOST=192.168.1.20` at its top to match your environment.
+
 ```bash
 umask 077
 
@@ -154,14 +157,6 @@ EOF
 chmod 600 .env
 ```
 
-Before running, update the following variables to match your environment:
-
-```bash
-LANGFUSE_HOST_PORT=16300
-MINIO_HOST_PORT=16900
-LANGFUSE_HOST=192.168.1.20
-```
-
 ### 2.2 Modifications in `docker-compose.yml`
 
 The [docker-compose.yml](./docker-compose.yml) in this repository includes the following modifications based on the [official docker-compose.yml](https://github.com/langfuse/langfuse/blob/main/docker-compose.yml).  
@@ -214,6 +209,9 @@ Inter-service communication in Langfuse uses the internal Docker Compose network
 
 ### 2.3 Verify Compose Configuration
 
+> [!CAUTION]
+> `docker compose config` may display expanded passwords and secrets. Do not paste the output into logs or public issues.
+
 Verify that `.env` is loaded correctly:
 
 ```bash
@@ -225,9 +223,6 @@ You can inspect the expanded Compose configuration with:
 ```bash
 docker compose config
 ```
-
-> [!CAUTION]
-> `docker compose config` may display expanded passwords and secrets. Do not paste the output into logs or public issues.
 
 ### 2.4 Start Services
 
@@ -294,7 +289,17 @@ Langfuse accepts OTLP/HTTP in JSON or protobuf formats. gRPC is not used.
 
 ### 4.1 Shared Authentication Environment File
 
-Create a shared authentication environment file configured with your Langfuse Public Key and Secret Key:
+> [!NOTE]
+> Before running the script below, set the Langfuse host and port and choose `true` / `false` for both capture variables at the top of the generated file. Replace `sk-lf-...` and `pk-lf-...` with the actual Project keys created in the Langfuse Web UI. The following client setup steps use these choices.
+
+> [!TIP]
+> `COPILOT_OTEL_CAPTURE_CONTENT` controls the Extension Host; `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT` controls the Agent Host and Copilot CLI/TUI. `true` sends message content; `false` omits it.
+
+> [!WARNING]
+> Setting either capture variable to `true` may persist sensitive information in Langfuse, where authorized users can view it. We recommend `false`, especially in shared environments.
+
+> [!CAUTION]
+> Never commit your Secret Key to a Git repository.
 
 ```bash
 mkdir -p ~/.config/langfuse
@@ -303,6 +308,10 @@ chmod 700 ~/.config/langfuse
 umask 077
 
 cat > ~/.config/langfuse/copilot-otel.env <<'EOF'
+# Choose true (send content) or false (do not send content) for each pipeline.
+export COPILOT_OTEL_CAPTURE_CONTENT="false"
+export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="false"
+
 export LANGFUSE_HOST="192.168.1.20"
 export LANGFUSE_HOST_PORT="16300"
 export LANGFUSE_SECRET_KEY="sk-lf-..."
@@ -318,23 +327,17 @@ export LANGFUSE_AUTH_STRING="$(
 export OTEL_EXPORTER_OTLP_ENDPOINT="${LANGFUSE_BASE_URL}/api/public/otel"
 export OTEL_EXPORTER_OTLP_PROTOCOL="http/json"
 export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${LANGFUSE_AUTH_STRING},x-langfuse-ingestion-version=4"
-export OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT="false"
 EOF
 
 chmod 600 ~/.config/langfuse/copilot-otel.env
 ```
-
-Replace `sk-lf-...` and `pk-lf-...` with your actual Project keys created in the Langfuse Web UI.
-
-> [!CAUTION]
-> Never commit your Secret Key to a Git repository.
 
 > [!TIP]
 > Specifying `x-langfuse-ingestion-version: 4` reduces ingestion delay for the Langfuse v4 data model and Observations API.
 >
 > For details, refer to the [Langfuse OpenTelemetry documentation](https://langfuse.com/integrations/native/opentelemetry).
 
-Add the following code to `~/.zshrc`:
+For Copilot CLI/TUI or Desktop VS Code, add the following code to `~/.zshrc`. For Remote Tunnel only, continue to the [Remote Tunnel setup](./docs/vscode-remote-tunnel.en.md); no local wrapper or Desktop User Settings are needed.
 
 ```bash
 # Wrap GitHub Copilot CLI command with Langfuse environment variables
@@ -351,6 +354,8 @@ copilot() (
 # Wrap VS Code launch command with Langfuse environment variables
 code() (
   source "$HOME/.config/langfuse/copilot-otel.env"
+
+  unset OTEL_EXPORTER_OTLP_ENDPOINT
 
   export OTEL_RESOURCE_ATTRIBUTES="langfuse.trace.metadata.execution_origin=vscode-chat"
 
@@ -383,39 +388,63 @@ langfuse.trace.metadata.execution_origin=manual-tui
 
 ### 5.2 VS Code Built-in Chat
 
-Configure in VS Code's `settings.json`:
+Run the following block to generate JSON from the host and capture choices in the shared env file. In Desktop VS Code, open **Preferences: Open User Settings (JSON)** locally and merge the generated entries into the existing object (not Workspace Settings). Re-run this block when changing the host or capture choices.
 
-```json
+> [!TIP]
+> `github.copilot.chat.otel.captureContent` controls content capture for the Extension Host; `chat.agentHost.otel.captureContent` controls it for the Agent Host. The generated JSON uses the respective capture choices from the shared env file as boolean values.
+
+> [!WARNING]
+> Setting either `captureContent` option to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
+
+```bash
+(
+set -eu
+unset LANGFUSE_BASE_URL OTEL_EXPORTER_OTLP_HEADERS \
+  COPILOT_OTEL_CAPTURE_CONTENT OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT
+source "$HOME/.config/langfuse/copilot-otel.env"
+: "${LANGFUSE_BASE_URL:?}"
+for capture_value in "$COPILOT_OTEL_CAPTURE_CONTENT" "$OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT"; do
+  case "$capture_value" in
+    true|false) ;;
+    *) echo "Capture settings must be true or false" >&2; exit 1 ;;
+  esac
+done
+
+cat <<EOF
 {
   "github.copilot.chat.otel.enabled": true,
   "github.copilot.chat.otel.exporterType": "otlp-http",
-  "github.copilot.chat.otel.otlpEndpoint": "http://192.168.1.20:16300/api/public/otel",
-  "github.copilot.chat.otel.captureContent": false
+  "github.copilot.chat.otel.otlpEndpoint": "${LANGFUSE_BASE_URL%/}/api/public/otel",
+  "github.copilot.chat.otel.captureContent": ${COPILOT_OTEL_CAPTURE_CONTENT},
+  "chat.agentHost.otel.enabled": true,
+  "chat.agentHost.otel.exporterType": "otlp-http",
+  "chat.agentHost.otel.otlpEndpoint": "${LANGFUSE_BASE_URL%/}/api/public/otel/v1/traces",
+  "chat.agentHost.otel.captureContent": ${OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT}
 }
+EOF
+)
 ```
 
-> [!TIP]
-> `github.copilot.chat.otel.captureContent` controls whether message bodies (prompts, responses, tool arguments) are transmitted.
-
-> [!WARNING]
-> Setting `github.copilot.chat.otel.captureContent` to `true` may persist sensitive data, making it viewable to authorized users on Langfuse. We recommend setting it to `false`, especially in shared environments.
+The Extension Host appends `/v1/traces` to its base endpoint; the Agent Host uses the full endpoint including `/v1/traces`. The `code()` wrapper unsets `OTEL_EXPORTER_OTLP_ENDPOINT` so the shared CLI endpoint does not override these separate local settings. Remote Tunnel uses the service process environment instead; no remote OTel User Settings are needed.
 
 Do not write authentication headers into the VS Code settings file; set them via environment variables in the process that launches VS Code:
+
+> [!WARNING]
+> Completely quit VS Code before running `code .` in a terminal with the OpenTelemetry environment variables set.
+>
+> If launched directly from the Dock or if you attach a folder to an already-running VS Code instance, the parent process environment variables might not be inherited.
 
 ```bash
 code .
 ```
+
+OTLP authentication headers can be inherited by subprocesses launched from the Agent Host. Avoid printing the full process environment to logs.
 
 When wrapping the `code` command, the following setting is applied automatically at startup:
 
 ```text
 langfuse.trace.metadata.execution_origin=vscode-chat
 ```
-
-> [!WARNING]
-> Completely quit VS Code before running `code .` in a terminal with the OpenTelemetry environment variables set.
->
-> If launched directly from the Dock or if you attach a folder to an already-running VS Code instance, the parent process environment variables might not be inherited.
 
 If you run VS Code Remote Tunnel as a service and access VS Code Chat from a browser on a different host, refer to [VS Code Remote Tunnel Setup](./docs/vscode-remote-tunnel.en.md).
 
@@ -499,8 +528,8 @@ docker compose down
 - Do not commit `.env` to Git.
 - Add `.env` to `.gitignore`.
 - Do not paste Public Keys, Secret Keys, or Basic auth strings in logs or issues.
-- Keep `OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT=false`.
-- Do not send sensitive message content (prompts, responses, tool arguments).
+- Choose the two capture values in section 4.1 according to the content you intend to record.
+- Before enabling `true`, check whether prompts, responses, or tool arguments contain secrets or personal information.
 - Do not share the output of `docker compose config`.
 - Avoid leaving Secret Keys in shell history.
 - For production use, re-evaluate exposed ports, auth methods, backups, and data retention policies.

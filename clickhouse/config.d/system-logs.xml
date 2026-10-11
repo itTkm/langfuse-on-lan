@@ -1,0 +1,26 @@
+<clickhouse>
+    <trace_log remove="1"/>
+    <text_log remove="1"/>
+    <opentelemetry_span_log remove="1"/>
+    <asynchronous_metric_log remove="1"/>
+    <metric_log remove="1"/>
+    <latency_log remove="1"/>
+
+    <part_log>
+        <ttl>event_date + INTERVAL 7 DAY DELETE</ttl>
+    </part_log>
+
+    <query_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </query_log>
+
+    <error_log>
+        <ttl>event_date + INTERVAL 30 DAY DELETE</ttl>
+    </error_log>
+
+    <logger>
+        <level>information</level>
+        <size>100M</size>
+        <count>3</count>
+    </logger>
+</clickhouse>

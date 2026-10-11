@@ -160,6 +160,7 @@ services:
     volumes:
       - langfuse_clickhouse_data:/var/lib/clickhouse
       - langfuse_clickhouse_logs:/var/log/clickhouse-server
+      - ./clickhouse/config.d/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro # ClickHouse のシステムログ設定
 
     # 内部ネットワーク利用のため非公開化
     # ports:

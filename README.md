@@ -169,12 +169,14 @@ chmod 600 .env
 services:
   langfuse-web:
     ports:
-      - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000"
+      - "0.0.0.0:${LANGFUSE_HOST_PORT:-3000}:3000"
 
   minio:
     ports:
-      - "0.0.0.0:${MINIO_HOST_PORT:-16900}:9000"
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
 ```
+
+実際の公開ポートには、2.1 の `.env` で指定した `16300` / `16900` が使用されます。
 
 `langfuse-web` に加えて `minio` を `0.0.0.0` で公開することで、同一 LAN 上の別ホストから Langfuse Web UI と Langfuse での Batch Export のダウンロードを利用できます。
 
@@ -207,6 +209,25 @@ Langfuse 自身のサービス間通信は Docker Compose の内部ネットワ�
 
 > [!NOTE]
 > MinIO のうち、クライアントからのアクセスが必要な S3 API (`9000/tcp`) だけをホストへ公開します。管理用の MinIO Console (`9001/tcp`) は公開しません。
+
+#### ClickHouse のシステムログを制限
+
+公式 Compose に対し、[system-logs.xml](./clickhouse/config.d/system-logs.xml) を ClickHouse の `config.d` に読み取り専用でマウントしています。
+
+```yaml
+services:
+  clickhouse:
+    volumes:
+      - ./clickhouse/config.d/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
+```
+
+設定内容は次のとおりです。
+
+- Langfuse で不要な ClickHouse 内部診断ログ（`trace_log`、`text_log`、`opentelemetry_span_log`、`asynchronous_metric_log`、`metric_log`、`latency_log`）の生成を停止する。`opentelemetry_span_log` は ClickHouse 自身の診断ログであり、Langfuse に保存する Copilot の OTel トレースとは別です。
+- 障害調査に利用する `part_log` を7日間、`query_log` と `error_log` を30日間保持する（TTL）。
+- ClickHouse のファイルログを `information` レベル、`100M` ごとにローテーション、3世代保持とする。
+
+背景は [Langfuse 公式の ClickHouse システムログに関する説明](https://langfuse.com/self-hosting/configuration/scaling#clickhouse-system-log-tables) を参照してください。既存テーブルへの TTL 反映方法は 8.3 に記載しています。
 
 ### 2.3 Compose 設定を確認
 
@@ -507,6 +528,23 @@ docker compose logs -f langfuse-web
 
 ```bash
 docker compose up -d
+```
+
+また、`clickhouse/config.d/system-logs.xml` を変更した場合は、ClickHouse コンテナのみを再作成します。一時的に ClickHouse への接続が途切れますが、データボリュームは維持されます。
+
+```bash
+docker compose up -d --no-deps --force-recreate clickhouse
+```
+
+**既存の ClickHouse を使う環境では**、XML の `<ttl>` 設定だけでは作成済みシステムテーブルの TTL が更新されません。次の SQL を一度適用してください。保持期限を過ぎた診断ログは削除対象になります（Langfuse のトレースデータには影響しません）。
+
+```bash
+docker compose exec -T clickhouse sh -c \
+  'exec clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
+ALTER TABLE system.part_log MODIFY TTL event_date + INTERVAL 7 DAY DELETE;
+ALTER TABLE system.query_log MODIFY TTL event_date + INTERVAL 30 DAY DELETE;
+ALTER TABLE system.error_log MODIFY TTL event_date + INTERVAL 30 DAY DELETE;
+SQL
 ```
 
 ### 8.4 停止

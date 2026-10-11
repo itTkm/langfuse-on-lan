@@ -168,12 +168,14 @@ These changes are already applied, so no additional edits are necessary unless y
 services:
   langfuse-web:
     ports:
-      - "0.0.0.0:${LANGFUSE_HOST_PORT:-16300}:3000"
+      - "0.0.0.0:${LANGFUSE_HOST_PORT:-3000}:3000"
 
   minio:
     ports:
-      - "0.0.0.0:${MINIO_HOST_PORT:-16900}:9000"
+      - "0.0.0.0:${MINIO_HOST_PORT:-9090}:9000"
 ```
+
+The ports actually exposed are `16300` / `16900`, as specified in the `.env` file generated in section 2.1.
 
 Exposing `minio` in addition to `langfuse-web` on `0.0.0.0` allows other hosts on the same LAN to access the Langfuse Web UI and download Batch Exports in Langfuse.
 
@@ -206,6 +208,25 @@ Inter-service communication in Langfuse uses the internal Docker Compose network
 
 > [!NOTE]
 > Only the MinIO S3 API (`9000/tcp`), which clients need to access, is published to the host. The MinIO administration Console (`9001/tcp`) remains unexposed.
+
+#### Limit ClickHouse System Logs
+
+Compared with the official Compose file, this repository mounts [system-logs.xml](./clickhouse/config.d/system-logs.xml) read-only into ClickHouse's `config.d` directory:
+
+```yaml
+services:
+  clickhouse:
+    volumes:
+      - ./clickhouse/config.d/system-logs.xml:/etc/clickhouse-server/config.d/system-logs.xml:ro
+```
+
+This configuration:
+
+- Disables ClickHouse diagnostic logs not needed by Langfuse (`trace_log`, `text_log`, `opentelemetry_span_log`, `asynchronous_metric_log`, `metric_log`, `latency_log`). The ClickHouse `opentelemetry_span_log` is separate from Copilot OTel traces stored in Langfuse.
+- Retains diagnostic `part_log` data for 7 days and `query_log` / `error_log` for 30 days (TTL).
+- Sets the ClickHouse file logger to `information`, rotates at `100M`, and keeps 3 rotated files.
+
+See the [Langfuse documentation on ClickHouse system logs](https://langfuse.com/self-hosting/configuration/scaling#clickhouse-system-log-tables). For applying TTLs to existing tables, see section 8.3.
 
 ### 2.3 Verify Compose Configuration
 
@@ -506,6 +527,23 @@ After modifying `.env` or `docker-compose.yml`, run:
 
 ```bash
 docker compose up -d
+```
+
+If you change `clickhouse/config.d/system-logs.xml`, recreate only the ClickHouse container to apply the file mount and logger settings. ClickHouse will be briefly unavailable; existing data volumes are preserved.
+
+```bash
+docker compose up -d --no-deps --force-recreate clickhouse
+```
+
+**For an existing ClickHouse installation**, setting `<ttl>` in XML does not update the TTL of system tables already created. Apply the following SQL once. Expired diagnostic logs become eligible for deletion; Langfuse trace data is unaffected.
+
+```bash
+docker compose exec -T clickhouse sh -c \
+  'exec clickhouse-client --user "$CLICKHOUSE_USER" --password "$CLICKHOUSE_PASSWORD"' <<'SQL'
+ALTER TABLE system.part_log MODIFY TTL event_date + INTERVAL 7 DAY DELETE;
+ALTER TABLE system.query_log MODIFY TTL event_date + INTERVAL 30 DAY DELETE;
+ALTER TABLE system.error_log MODIFY TTL event_date + INTERVAL 30 DAY DELETE;
+SQL
 ```
 
 ### 8.4 Stop
